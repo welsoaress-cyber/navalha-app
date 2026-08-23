@@ -7,10 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@700;800&display=swap">
 <style>
-  /* ── CONFIG ── altere aqui ── */
-  /* PIX_KEY e WHATSAPP são definidos no script abaixo */
-
-  :root { --primary: #D4A843; --bg: #0F172A; --surface: #1E293B; --border: #334155; --ink: #F8FAFC; --ink-2: #94A3B8; --ink-3: #475569; --green: #22c55e; }
+  :root { --primary: #D4A843; --bg: #0F172A; --surface: #1E293B; --border: #334155; --ink: #F8FAFC; --ink-2: #94A3B8; --ink-3: #475569; --green: #22c55e; --red: #ef4444; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--ink); min-height: 100dvh; display: flex; flex-direction: column; }
 
@@ -20,36 +17,35 @@
   .nav-tag { font-size: 12px; color: var(--ink-3); }
 
   /* PROGRESS */
-  .progress { display: flex; justify-content: center; gap: 8px; padding: 28px 24px 0; }
-  .prog-dot { height: 4px; width: 56px; border-radius: 2px; background: var(--border); transition: background 0.3s; }
+  .progress { display: flex; justify-content: center; gap: 6px; padding: 24px 24px 0; }
+  .prog-dot { height: 4px; width: 44px; border-radius: 2px; background: var(--border); transition: background 0.3s; }
   .prog-dot.done { background: var(--primary); }
   .prog-dot.active { background: var(--primary); opacity: 0.5; }
 
   /* CARD */
-  .wrap { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 32px 20px 60px; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 36px 32px; width: 100%; max-width: 500px; }
+  .wrap { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 28px 20px 60px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 32px 28px; width: 100%; max-width: 520px; }
 
   .step { display: none; }
   .step.active { display: block; }
 
   .step-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--primary); margin-bottom: 6px; }
   .step-title { font-family: 'Sora', sans-serif; font-size: 22px; font-weight: 800; margin-bottom: 6px; line-height: 1.2; }
-  .step-sub { font-size: 14px; color: var(--ink-2); margin-bottom: 28px; line-height: 1.5; }
+  .step-sub { font-size: 14px; color: var(--ink-2); margin-bottom: 24px; line-height: 1.5; }
 
   /* PLAN CARD */
-  .plan-selected { background: rgba(212,168,67,0.08); border: 1.5px solid rgba(212,168,67,0.4); border-radius: 14px; padding: 20px; margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .plan-selected { background: rgba(212,168,67,0.08); border: 1.5px solid rgba(212,168,67,0.4); border-radius: 14px; padding: 18px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .plan-name { font-family: 'Sora', sans-serif; font-size: 18px; font-weight: 800; }
-  .plan-price { text-align: right; }
-  .plan-price .amount { font-family: 'Sora', sans-serif; font-size: 28px; font-weight: 800; color: var(--primary); }
-  .plan-price .period { font-size: 13px; color: var(--ink-2); }
-  .plan-price .setup { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
-  .plan-features { list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink-2); }
+  .plan-price .amount { font-family: 'Sora', sans-serif; font-size: 26px; font-weight: 800; color: var(--primary); }
+  .plan-price .period { font-size: 12px; color: var(--ink-2); }
+  .plan-price .setup { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+  .plan-features { list-style: none; display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--ink-2); margin-bottom: 20px; }
   .plan-features li::before { content: '✓ '; color: var(--primary); font-weight: 700; }
 
   /* FORM */
-  .form-group { margin-bottom: 16px; }
-  .form-label { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; display: block; }
-  .form-input { width: 100%; padding: 13px 14px; border-radius: 10px; border: 1.5px solid var(--border); font-size: 15px; font-family: inherit; background: var(--bg); color: var(--ink); outline: none; transition: border-color 0.18s; }
+  .form-group { margin-bottom: 14px; }
+  .form-label { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 5px; display: block; }
+  .form-input { width: 100%; padding: 12px 13px; border-radius: 10px; border: 1.5px solid var(--border); font-size: 15px; font-family: inherit; background: var(--bg); color: var(--ink); outline: none; transition: border-color 0.18s; }
   .form-input:focus { border-color: var(--primary); }
   .form-hint { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
   .form-hint strong { color: var(--primary); }
@@ -57,29 +53,59 @@
   .color-preview { width: 44px; height: 44px; border-radius: 10px; border: 2px solid var(--border); flex-shrink: 0; }
 
   /* BUTTONS */
-  .btn-next { width: 100%; padding: 15px; border-radius: 10px; border: none; background: var(--primary); color: #0F172A; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; margin-top: 8px; transition: all 0.2s; }
+  .btn-next { width: 100%; padding: 14px; border-radius: 10px; border: none; background: var(--primary); color: #0F172A; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; margin-top: 8px; transition: all 0.2s; }
   .btn-next:hover { opacity: 0.9; transform: translateY(-1px); }
   .btn-next:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-  .btn-back { background: none; border: none; color: var(--ink-3); font-size: 14px; cursor: pointer; font-family: inherit; padding: 0; margin-bottom: 20px; display: flex; align-items: center; gap: 5px; }
+  .btn-back { background: none; border: none; color: var(--ink-3); font-size: 14px; cursor: pointer; font-family: inherit; padding: 0; margin-bottom: 18px; display: flex; align-items: center; gap: 5px; }
   .btn-back:hover { color: var(--ink); }
 
+  /* SERVICES */
+  .service-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .service-row { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: flex; gap: 8px; align-items: center; }
+  .service-row .svc-name { flex: 2; font-size: 14px; font-weight: 600; }
+  .service-row .svc-detail { font-size: 12px; color: var(--ink-2); }
+  .service-row .svc-price { font-size: 14px; font-weight: 700; color: var(--primary); white-space: nowrap; }
+  .btn-del { background: none; border: none; color: var(--ink-3); cursor: pointer; font-size: 18px; padding: 0 4px; line-height: 1; flex-shrink: 0; }
+  .btn-del:hover { color: var(--red); }
+  .add-service-box { background: rgba(212,168,67,0.06); border: 1.5px dashed rgba(212,168,67,0.3); border-radius: 12px; padding: 16px; }
+  .add-service-row { display: grid; grid-template-columns: 1fr 90px 80px; gap: 8px; margin-bottom: 8px; }
+  .add-service-row .form-input { padding: 10px 11px; font-size: 13px; }
+  .add-labels { display: grid; grid-template-columns: 1fr 90px 80px; gap: 8px; margin-bottom: 4px; }
+  .add-labels span { font-size: 11px; color: var(--ink-3); font-weight: 600; }
+  .btn-add { background: none; border: 1.5px solid var(--primary); color: var(--primary); border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; width: 100%; transition: all 0.18s; }
+  .btn-add:hover { background: rgba(212,168,67,0.1); }
+
+  /* AVAILABILITY */
+  .avail-table { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 8px; }
+  .avail-row { display: grid; grid-template-columns: 40px 80px 1fr 1fr; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); transition: background 0.15s; }
+  .avail-row:last-child { border-bottom: none; }
+  .avail-row.off { opacity: 0.4; }
+  .avail-row .day-name { font-size: 13px; font-weight: 600; }
+  .avail-row .day-tag { font-size: 11px; color: var(--ink-3); }
+  .avail-select { background: var(--bg); border: 1.5px solid var(--border); color: var(--ink); border-radius: 8px; padding: 7px 8px; font-size: 13px; font-family: inherit; outline: none; width: 100%; cursor: pointer; }
+  .avail-select:focus { border-color: var(--primary); }
+  .avail-select:disabled { opacity: 0.3; cursor: not-allowed; }
+  .day-check { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; }
+
   /* PIX SCREEN */
-  .pix-box { background: var(--bg); border: 1.5px solid var(--border); border-radius: 14px; padding: 24px; margin: 20px 0; text-align: center; }
-  .pix-amount { font-family: 'Sora', sans-serif; font-size: 38px; font-weight: 800; color: var(--primary); margin-bottom: 4px; }
-  .pix-desc { font-size: 13px; color: var(--ink-2); margin-bottom: 20px; }
-  .pix-key-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-3); margin-bottom: 6px; }
-  .pix-key-val { font-size: 16px; font-weight: 700; color: var(--ink); word-break: break-all; margin-bottom: 12px; }
-  .btn-copy { background: rgba(212,168,67,0.12); border: 1px solid rgba(212,168,67,0.3); border-radius: 8px; padding: 9px 18px; font-size: 13px; font-weight: 700; color: var(--primary); cursor: pointer; font-family: inherit; transition: all 0.18s; }
+  .pix-box { background: var(--bg); border: 1.5px solid var(--border); border-radius: 14px; padding: 22px; margin: 16px 0; text-align: center; }
+  .pix-amount { font-family: 'Sora', sans-serif; font-size: 36px; font-weight: 800; color: var(--primary); margin-bottom: 4px; }
+  .pix-desc { font-size: 13px; color: var(--ink-2); margin-bottom: 18px; }
+  .pix-key-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-3); margin-bottom: 5px; }
+  .pix-key-val { font-size: 15px; font-weight: 700; color: var(--ink); word-break: break-all; margin-bottom: 10px; }
+  .btn-copy { background: rgba(212,168,67,0.12); border: 1px solid rgba(212,168,67,0.3); border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; color: var(--primary); cursor: pointer; font-family: inherit; transition: all 0.18s; }
   .btn-copy:hover { background: rgba(212,168,67,0.2); }
   .btn-copy.copied { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.3); color: var(--green); }
-  .pix-steps { list-style: none; text-align: left; display: flex; flex-direction: column; gap: 10px; margin: 20px 0; }
+  .pix-steps { list-style: none; text-align: left; display: flex; flex-direction: column; gap: 10px; margin: 16px 0; }
   .pix-steps li { display: flex; gap: 12px; align-items: flex-start; font-size: 14px; color: var(--ink-2); line-height: 1.4; }
-  .pix-steps li strong { display: inline-flex; width: 24px; height: 24px; background: var(--surface); border-radius: 50%; align-items: center; justify-content: center; font-size: 12px; color: var(--primary); flex-shrink: 0; }
-  .btn-whats { width: 100%; padding: 15px; border-radius: 10px; border: none; background: #25D366; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; margin-top: 4px; display: flex; align-items: center; justify-content: center; gap: 8px; }
-  .alert-box { background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.25); border-radius: 12px; padding: 16px; font-size: 13px; color: var(--ink-2); line-height: 1.5; margin-top: 16px; }
+  .pix-steps li strong { display: inline-flex; width: 24px; height: 24px; background: var(--surface); border-radius: 50%; align-items: center; justify-content: center; font-size: 12px; color: var(--primary); flex-shrink: 0; border: 1px solid var(--border); }
+  .btn-whats { width: 100%; padding: 14px; border-radius: 10px; border: none; background: #25D366; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; margin-top: 4px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .alert-box { background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.25); border-radius: 12px; padding: 14px; font-size: 13px; color: var(--ink-2); line-height: 1.5; margin-top: 14px; }
 
-  .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; margin-right: 8px; vertical-align: middle; }
+  .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; margin-right: 8px; vertical-align: middle; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty-msg { font-size: 13px; color: var(--ink-3); text-align: center; padding: 12px 0; font-style: italic; }
 </style>
 </head>
 <body>
@@ -94,6 +120,8 @@
   <div class="prog-dot" id="p2"></div>
   <div class="prog-dot" id="p3"></div>
   <div class="prog-dot" id="p4"></div>
+  <div class="prog-dot" id="p5"></div>
+  <div class="prog-dot" id="p6"></div>
 </div>
 
 <div class="wrap">
@@ -101,18 +129,18 @@
 
     <!-- STEP 1: Plano -->
     <div class="step" id="s1">
-      <div class="step-label">Passo 1 de 4</div>
+      <div class="step-label">Passo 1 de 6</div>
       <div class="step-title">Você escolheu o plano</div>
       <div class="step-sub">Confirme abaixo e vamos configurar sua barbearia.</div>
       <div class="plan-selected" id="planCard"></div>
       <ul class="plan-features" id="planFeatures"></ul>
-      <button class="btn-next" style="margin-top:24px;" onclick="goStep(2)">Continuar →</button>
+      <button class="btn-next" onclick="goStep(2)">Continuar →</button>
     </div>
 
     <!-- STEP 2: Dados da barbearia -->
     <div class="step" id="s2">
       <button class="btn-back" onclick="goStep(1)">← Voltar</button>
-      <div class="step-label">Passo 2 de 4</div>
+      <div class="step-label">Passo 2 de 6</div>
       <div class="step-title">Dados da sua barbearia</div>
       <div class="step-sub">Essas informações aparecem para os seus clientes.</div>
       <div class="form-group">
@@ -120,7 +148,7 @@
         <input class="form-input" id="shopName" type="text" placeholder="Ex: Barbearia do João" oninput="autoSlug()">
       </div>
       <div class="form-group">
-        <label class="form-label">Link do agendamento (URL)</label>
+        <label class="form-label">Link do agendamento</label>
         <input class="form-input" id="shopSlug" type="text" placeholder="joao" oninput="updateSlugPreview()">
         <div class="form-hint">Ficará: <strong id="slugPreview">joao</strong>.navalhanobigode.com.br</div>
       </div>
@@ -130,15 +158,66 @@
           <input class="form-input" id="shopColor" type="text" value="#D4A843" oninput="updateColor()" style="flex:1">
           <div class="color-preview" id="colorPreview" style="background:#D4A843"></div>
         </div>
-        <div class="form-hint">Use o código hex da sua cor (ex: #1a6b3c para verde)</div>
+        <div class="form-hint">Código hex (ex: #1a6b3c para verde)</div>
       </div>
       <button class="btn-next" onclick="validateStep2()">Continuar →</button>
     </div>
 
-    <!-- STEP 3: Criar conta -->
+    <!-- STEP 3: Serviços -->
     <div class="step" id="s3">
       <button class="btn-back" onclick="goStep(2)">← Voltar</button>
-      <div class="step-label">Passo 3 de 4</div>
+      <div class="step-label">Passo 3 de 6</div>
+      <div class="step-title">Seus serviços</div>
+      <div class="step-sub">Adicione os serviços que você oferece com preço e duração.</div>
+
+      <div class="service-list" id="serviceList">
+        <div class="empty-msg" id="emptyMsg">Nenhum serviço adicionado ainda.</div>
+      </div>
+
+      <div class="add-service-box">
+        <div class="add-labels">
+          <span>Serviço</span>
+          <span>Duração</span>
+          <span>Preço</span>
+        </div>
+        <div class="add-service-row">
+          <input class="form-input" id="svcName" type="text" placeholder="Ex: Corte Degradê">
+          <select class="form-input" id="svcDuration">
+            <option value="15">15 min</option>
+            <option value="20">20 min</option>
+            <option value="30" selected>30 min</option>
+            <option value="40">40 min</option>
+            <option value="45">45 min</option>
+            <option value="50">50 min</option>
+            <option value="60">60 min</option>
+            <option value="75">75 min</option>
+            <option value="90">90 min</option>
+            <option value="120">2 horas</option>
+          </select>
+          <input class="form-input" id="svcPrice" type="number" placeholder="R$" min="0" step="0.50">
+        </div>
+        <button class="btn-add" onclick="addService()">+ Adicionar serviço</button>
+      </div>
+
+      <button class="btn-next" style="margin-top:16px;" onclick="validateStep3()">Continuar →</button>
+    </div>
+
+    <!-- STEP 4: Horários -->
+    <div class="step" id="s4">
+      <button class="btn-back" onclick="goStep(3)">← Voltar</button>
+      <div class="step-label">Passo 4 de 6</div>
+      <div class="step-title">Dias e horários</div>
+      <div class="step-sub">Marque os dias que você atende e defina o horário de cada dia.</div>
+
+      <div class="avail-table" id="availTable"></div>
+
+      <button class="btn-next" style="margin-top:16px;" onclick="validateStep4()">Continuar →</button>
+    </div>
+
+    <!-- STEP 5: Conta -->
+    <div class="step" id="s5">
+      <button class="btn-back" onclick="goStep(4)">← Voltar</button>
+      <div class="step-label">Passo 5 de 6</div>
       <div class="step-title">Crie seu acesso</div>
       <div class="step-sub">Com esse e-mail e senha você acessa o painel da sua barbearia.</div>
       <div class="form-group">
@@ -153,33 +232,33 @@
         <label class="form-label">Senha (mínimo 6 caracteres)</label>
         <input class="form-input" id="ownerPass" type="password" placeholder="••••••••">
       </div>
-      <button class="btn-next" id="btnCriar" onclick="createAccount()">Criar minha barbearia</button>
+      <button class="btn-next" id="btnCriar" onclick="createAccount()">Criar minha barbearia 🚀</button>
     </div>
 
-    <!-- STEP 4: Pix -->
-    <div class="step" id="s4">
-      <div class="step-label">Passo 4 de 4</div>
+    <!-- STEP 6: Pix -->
+    <div class="step" id="s6">
+      <div class="step-label">Passo 6 de 6</div>
       <div class="step-title">🎉 Barbearia criada!</div>
       <div class="step-sub">Agora só falta o pagamento para ativarmos tudo.</div>
       <div class="pix-box">
         <div class="pix-amount" id="pixAmount">R$ 149</div>
-        <div class="pix-desc" id="pixDesc">Referente ao plano Equipe + Kit de Instalação</div>
+        <div class="pix-desc" id="pixDesc"></div>
         <div class="pix-key-label">Chave Pix</div>
         <div class="pix-key-val" id="pixKeyVal">—</div>
         <button class="btn-copy" id="btnCopy" onclick="copyPix()">📋 Copiar chave Pix</button>
       </div>
       <ul class="pix-steps">
         <li><strong>1</strong>Abra o app do seu banco e escolha "Pix"</li>
-        <li><strong>2</strong>Cole ou copie a chave Pix acima</li>
-        <li><strong>3</strong>Pague o valor exato e salve o comprovante</li>
-        <li><strong>4</strong>Clique no botão abaixo e mande o comprovante pelo WhatsApp</li>
+        <li><strong>2</strong>Cole a chave Pix acima e confirme o valor</li>
+        <li><strong>3</strong>Salve o comprovante</li>
+        <li><strong>4</strong>Clique no botão abaixo e mande pelo WhatsApp</li>
       </ul>
-      <button class="btn-whats" id="btnWhats" onclick="sendWhats()">
+      <button class="btn-whats" id="btnWhats">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
         Enviar comprovante pelo WhatsApp
       </button>
       <div class="alert-box">
-        ✅ <strong>Sua barbearia já está cadastrada.</strong><br>
+        ✅ <strong>Barbearia cadastrada.</strong><br>
         Assim que confirmarmos o pagamento (geralmente em até 1 hora no horário comercial), liberamos seu acesso e enviamos as instruções pelo WhatsApp.
       </div>
     </div>
@@ -190,27 +269,44 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/js/config.js"></script>
 <script>
-// ─── CONFIGURE AQUI ───────────────────────────────────
-const PIX_KEY = 'welsoaress@gmail.com.br'  // chave Pix
-const WHATSAPP = '5511999999999'     // ← seu número com DDI+DDD sem espaços
-// ──────────────────────────────────────────────────────
+// ─── CONFIGURE AQUI ────────────────────────────────────
+const PIX_KEY  = 'welsoaress@gmail.com.br'
+const WHATSAPP = '5511999999999'  // ← seu número com DDI+DDD
+// ───────────────────────────────────────────────────────
 
 const PLANS = {
-  solo:   { name: 'Solo',  monthly: 99,  setup: 150, max_barbers: 1,  changes_limit: 10,   features: ['1 barbeiro','App de agendamento','Painel do barbeiro','Agendamentos ilimitados','Suporte via WhatsApp','Configuração feita por nós'] },
-  equipe: { name: 'Equipe',monthly: 149, setup: 300, max_barbers: 3,  changes_limit: 30,   features: ['Até 3 barbeiros','App de agendamento','Painel do barbeiro','Agendamentos ilimitados','Suporte via WhatsApp','Configuração feita por nós','100 cartões com QR Code'] },
-  black:  { name: 'Black', monthly: 299, setup: 500, max_barbers: 5,  changes_limit: null, features: ['Até 5 barbeiros','App de agendamento','Painel do barbeiro','Agendamentos ilimitados','Suporte prioritário','Configuração feita por nós','100 cartões por barbeiro'] }
+  solo:   { name:'Solo',   monthly:99,  setup:150, max_barbers:1, changes_limit:10,   features:['1 barbeiro','App de agendamento','Painel do barbeiro','Agendamentos ilimitados','Suporte via WhatsApp','Configuração feita por nós'] },
+  equipe: { name:'Equipe', monthly:149, setup:300, max_barbers:3, changes_limit:30,   features:['Até 3 barbeiros','App de agendamento','Painel do barbeiro','Agendamentos ilimitados','Suporte via WhatsApp','Configuração feita por nós','100 cartões com QR Code'] },
+  black:  { name:'Black',  monthly:299, setup:500, max_barbers:5, changes_limit:null, features:['Até 5 barbeiros','App de agendamento','Painel do barbeiro','Agendamentos ilimitados','Suporte prioritário via WhatsApp','Configuração feita por nós','100 cartões por barbeiro'] }
 }
 
-const params = new URLSearchParams(location.search)
+const params  = new URLSearchParams(location.search)
 const planKey = params.get('plano') || 'equipe'
-const plan = PLANS[planKey] || PLANS.equipe
+const plan    = PLANS[planKey] || PLANS.equipe
 let currentStep = 1
 
-// Render plano
+// ── Serviços coletados ──
+let services = []
+
+// ── Disponibilidade ──
+const DAYS = [
+  { key:'dom', label:'Domingo',  short:'Dom' },
+  { key:'seg', label:'Segunda',  short:'Seg' },
+  { key:'ter', label:'Terça',    short:'Ter' },
+  { key:'qua', label:'Quarta',   short:'Qua' },
+  { key:'qui', label:'Quinta',   short:'Qui' },
+  { key:'sex', label:'Sexta',    short:'Sex' },
+  { key:'sab', label:'Sábado',   short:'Sáb' }
+]
+// Estado inicial: Seg–Sáb ativos, Dom desligado
+const availState = { dom:false, seg:true, ter:true, qua:true, qui:true, sex:true, sab:true }
+const availTime  = { dom:{open:'09:00',close:'18:00'}, seg:{open:'09:00',close:'18:00'}, ter:{open:'09:00',close:'18:00'}, qua:{open:'09:00',close:'18:00'}, qui:{open:'09:00',close:'18:00'}, sex:{open:'09:00',close:'18:00'}, sab:{open:'09:00',close:'14:00'} }
+
+// ── Render plano ──
 document.getElementById('planCard').innerHTML = `
   <div>
     <div class="plan-name">${plan.name}</div>
-    <div style="font-size:13px;color:var(--ink-3);margin-top:4px;">Mensal + Kit de Instalação</div>
+    <div style="font-size:12px;color:var(--ink-3);margin-top:3px;">Mensal + Kit de Instalação</div>
   </div>
   <div class="plan-price">
     <div class="amount">R$ ${plan.monthly}</div>
@@ -219,13 +315,91 @@ document.getElementById('planCard').innerHTML = `
   </div>`
 document.getElementById('planFeatures').innerHTML = plan.features.map(f => `<li>${f}</li>`).join('')
 
-// Pix screen
 document.getElementById('pixAmount').textContent = `R$ ${plan.monthly + plan.setup}`
-document.getElementById('pixDesc').textContent = `Plano ${plan.name} (1º mês R$ ${plan.monthly} + Kit R$ ${plan.setup})`
-document.getElementById('pixKeyVal').textContent = PIX_KEY
+document.getElementById('pixDesc').textContent   = `Plano ${plan.name} — 1º mês R$ ${plan.monthly} + Kit R$ ${plan.setup}`
+document.getElementById('pixKeyVal').textContent  = PIX_KEY
 
+// ── Gera horários dropdown ──
+function timeOptions(selected) {
+  let opts = ''
+  for (let h = 6; h <= 23; h++) {
+    for (let m of [0, 30]) {
+      const hh = String(h).padStart(2,'0')
+      const mm = String(m).padStart(2,'0')
+      const val = `${hh}:${mm}`
+      opts += `<option value="${val}"${val===selected?' selected':''}>${val}</option>`
+    }
+  }
+  return opts
+}
+
+// ── Render tabela de disponibilidade ──
+function renderAvail() {
+  const table = document.getElementById('availTable')
+  table.innerHTML = DAYS.map(d => `
+    <div class="avail-row${availState[d.key] ? '' : ' off'}" id="row-${d.key}">
+      <input type="checkbox" class="day-check" ${availState[d.key]?'checked':''} onchange="toggleDay('${d.key}',this.checked)">
+      <div>
+        <div class="day-name">${d.short}</div>
+        <div class="day-tag">${d.label}</div>
+      </div>
+      <select class="avail-select" id="open-${d.key}" ${availState[d.key]?'':'disabled'} onchange="availTime['${d.key}'].open=this.value">
+        ${timeOptions(availTime[d.key].open)}
+      </select>
+      <select class="avail-select" id="close-${d.key}" ${availState[d.key]?'':'disabled'} onchange="availTime['${d.key}'].close=this.value">
+        ${timeOptions(availTime[d.key].close)}
+      </select>
+    </div>`).join('')
+}
+
+function toggleDay(key, checked) {
+  availState[key] = checked
+  const row = document.getElementById('row-'+key)
+  row.classList.toggle('off', !checked)
+  document.getElementById('open-'+key).disabled  = !checked
+  document.getElementById('close-'+key).disabled = !checked
+}
+
+// ── Serviços ──
+function renderServices() {
+  const list = document.getElementById('serviceList')
+  const empty = document.getElementById('emptyMsg')
+  if (services.length === 0) {
+    list.innerHTML = ''
+    list.appendChild(empty)
+    return
+  }
+  list.innerHTML = services.map((s,i) => `
+    <div class="service-row">
+      <div style="flex:1">
+        <div class="svc-name">${s.name}</div>
+        <div class="svc-detail">${s.duration_minutes} min</div>
+      </div>
+      <div class="svc-price">R$ ${Number(s.price).toFixed(2).replace('.',',')}</div>
+      <button class="btn-del" onclick="removeService(${i})">×</button>
+    </div>`).join('')
+}
+
+function addService() {
+  const name  = document.getElementById('svcName').value.trim()
+  const dur   = parseInt(document.getElementById('svcDuration').value)
+  const price = parseFloat(document.getElementById('svcPrice').value)
+  if (!name)        { alert('Digite o nome do serviço.'); return }
+  if (!price || price <= 0) { alert('Digite o preço.'); return }
+  services.push({ name, duration_minutes: dur, price })
+  document.getElementById('svcName').value  = ''
+  document.getElementById('svcPrice').value = ''
+  renderServices()
+}
+
+function removeService(i) {
+  services.splice(i, 1)
+  renderServices()
+}
+
+// ── Navegação ──
 function updateProgress(step) {
-  ;[1,2,3,4].forEach(i => {
+  [1,2,3,4,5,6].forEach(i => {
     const d = document.getElementById('p'+i)
     d.className = 'prog-dot' + (i < step ? ' done' : i === step ? ' active' : '')
   })
@@ -235,10 +409,12 @@ function goStep(n) {
   document.getElementById('s'+currentStep).classList.remove('active')
   currentStep = n
   document.getElementById('s'+currentStep).classList.add('active')
+  if (n === 4) renderAvail()
   updateProgress(n)
   window.scrollTo({top:0,behavior:'smooth'})
 }
 
+// ── Validações ──
 function autoSlug() {
   const name = document.getElementById('shopName').value
   const slug = name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'')
@@ -250,26 +426,44 @@ function updateSlugPreview() {
   document.getElementById('slugPreview').textContent = slug || 'sua-barbearia'
 }
 function updateColor() {
-  const c = document.getElementById('shopColor').value
-  document.getElementById('colorPreview').style.background = c
+  document.getElementById('colorPreview').style.background = document.getElementById('shopColor').value
 }
 
 function validateStep2() {
   const name = document.getElementById('shopName').value.trim()
   const slug = document.getElementById('shopSlug').value.toLowerCase().replace(/[^a-z0-9-]/g,'')
   if (!name) { alert('Digite o nome da barbearia.'); return }
-  if (!slug || slug.length < 2) { alert('Digite um slug válido (mínimo 2 letras).'); return }
+  if (!slug || slug.length < 2) { alert('Digite um link válido (mínimo 2 letras).'); return }
   document.getElementById('shopSlug').value = slug
   goStep(3)
 }
 
+function validateStep3() {
+  if (services.length === 0) { alert('Adicione pelo menos um serviço.'); return }
+  goStep(4)
+}
+
+function validateStep4() {
+  const active = DAYS.filter(d => availState[d.key])
+  if (active.length === 0) { alert('Selecione pelo menos um dia de atendimento.'); return }
+  // Valida que fechamento > abertura
+  for (const d of active) {
+    if (availTime[d.key].open >= availTime[d.key].close) {
+      alert(`${d.label}: o horário de fechamento deve ser depois da abertura.`)
+      return
+    }
+  }
+  goStep(5)
+}
+
+// ── Criação da conta + insert tudo ──
 async function createAccount() {
-  const name = document.getElementById('shopName').value.trim()
-  const slug = document.getElementById('shopSlug').value.toLowerCase().replace(/[^a-z0-9-]/g,'')
-  const color = document.getElementById('shopColor').value.trim() || '#D4A843'
+  const shopName  = document.getElementById('shopName').value.trim()
+  const slug      = document.getElementById('shopSlug').value.toLowerCase().replace(/[^a-z0-9-]/g,'')
+  const color     = document.getElementById('shopColor').value.trim() || '#D4A843'
   const ownerName = document.getElementById('ownerName').value.trim()
-  const email = document.getElementById('ownerEmail').value.trim()
-  const pass = document.getElementById('ownerPass').value
+  const email     = document.getElementById('ownerEmail').value.trim()
+  const pass      = document.getElementById('ownerPass').value
 
   if (!ownerName || !email || !pass) { alert('Preencha todos os campos.'); return }
   if (pass.length < 6) { alert('Senha deve ter pelo menos 6 caracteres.'); return }
@@ -278,42 +472,66 @@ async function createAccount() {
   btn.disabled = true
   btn.innerHTML = '<span class="spinner"></span>Criando sua barbearia…'
 
-  // 1. Cria usuário
-  const { data: authData, error: authErr } = await db.auth.signUp({ email, password: pass })
-  if (authErr) {
-    btn.disabled = false
-    btn.textContent = 'Criar minha barbearia'
-    alert('Erro: ' + (authErr.message || 'Tente novamente.'))
-    return
-  }
+  // 1. Auth
+  const { error: authErr } = await db.auth.signUp({ email, password: pass })
+  if (authErr) { showErr(btn, 'Erro: ' + (authErr.message || 'Tente novamente.')); return }
 
-  // 2. Cria barbearia (status trial = aguardando pagamento)
-  const { error: shopErr } = await db.from('barbershops').insert({
-    slug, name, owner_email: email,
+  // 2. Barbearia
+  const { data: shopData, error: shopErr } = await db.from('barbershops').insert({
+    slug, name: shopName, owner_email: email,
     primary_color: color, plan: planKey,
     status: 'trial',
     max_barbers: plan.max_barbers,
     changes_limit: plan.changes_limit
-  })
+  }).select('id').single()
 
   if (shopErr) {
-    btn.disabled = false
-    btn.textContent = 'Criar minha barbearia'
     if (shopErr.message?.includes('unique') || shopErr.message?.includes('duplicate')) {
-      alert('Esse link (slug) já está em uso. Escolha outro no passo anterior.')
-      goStep(2)
-    } else {
-      alert('Erro ao criar barbearia: ' + shopErr.message)
+      showErr(btn, null)
+      alert('Esse link já está em uso. Escolha outro.')
+      goStep(2); return
     }
-    return
+    showErr(btn, 'Erro ao criar barbearia: ' + shopErr.message); return
   }
 
-  // Prepara WhatsApp
-  const total = plan.monthly + plan.setup
-  const waMsg = encodeURIComponent(`Olá! Acabei de criar minha barbearia *${name}* no Navalha no Bigode.\n\nPlano: *${plan.name}*\nValor pago: *R$ ${total}*\n\nSegue o comprovante do Pix! 🧾`)
-  document.getElementById('btnWhats').onclick = () => window.open(`https://wa.me/${WHATSAPP}?text=${waMsg}`)
+  const shopId = shopData.id
 
-  goStep(4)
+  // 3. Barbeiro (o próprio dono como barbeiro 1)
+  const { data: barberData, error: barberErr } = await db.from('barbers').insert({
+    barbershop_id: shopId, name: ownerName, active: true
+  }).select('id').single()
+
+  if (barberErr) { showErr(btn, 'Erro ao cadastrar barbeiro: ' + barberErr.message); return }
+
+  const barberId = barberData.id
+
+  // 4. Serviços
+  const svcRows = services.map(s => ({ barbershop_id: shopId, name: s.name, duration_minutes: s.duration_minutes, price: s.price, active: true }))
+  const { error: svcErr } = await db.from('services').insert(svcRows)
+  if (svcErr) { showErr(btn, 'Erro ao salvar serviços: ' + svcErr.message); return }
+
+  // 5. Disponibilidade
+  const dayMap = { dom:0, seg:1, ter:2, qua:3, qui:4, sex:5, sab:6 }
+  const availRows = DAYS.filter(d => availState[d.key]).map(d => ({
+    barber_id:    barberId,
+    day_of_week:  dayMap[d.key],
+    start_time:   availTime[d.key].open,
+    end_time:     availTime[d.key].close
+  }))
+  const { error: availErr } = await db.from('availability').insert(availRows)
+  if (availErr) { showErr(btn, 'Erro ao salvar horários: ' + availErr.message); return }
+
+  // ✅ Sucesso
+  const total  = plan.monthly + plan.setup
+  const waMsg  = encodeURIComponent(`Olá! Acabei de criar minha barbearia *${shopName}* no Navalha no Bigode.\n\nPlano: *${plan.name}*\nValor pago: *R$ ${total}*\n\nSegue o comprovante do Pix! 🧾`)
+  document.getElementById('btnWhats').onclick = () => window.open(`https://wa.me/${WHATSAPP}?text=${waMsg}`)
+  goStep(6)
+}
+
+function showErr(btn, msg) {
+  btn.disabled = false
+  btn.textContent = 'Criar minha barbearia 🚀'
+  if (msg) alert(msg)
 }
 
 function copyPix() {
@@ -323,13 +541,6 @@ function copyPix() {
     btn.classList.add('copied')
     setTimeout(() => { btn.textContent = '📋 Copiar chave Pix'; btn.classList.remove('copied') }, 2500)
   })
-}
-
-function sendWhats() {
-  const total = plan.monthly + plan.setup
-  const name = document.getElementById('shopName')?.value || 'minha barbearia'
-  const waMsg = encodeURIComponent(`Olá! Acabei de criar minha barbearia *${name}* no Navalha no Bigode.\n\nPlano: *${plan.name}*\nValor pago: *R$ ${total}*\n\nSegue o comprovante do Pix! 🧾`)
-  window.open(`https://wa.me/${WHATSAPP}?text=${waMsg}`)
 }
 
 // Init
