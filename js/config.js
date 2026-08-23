@@ -4,14 +4,18 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const { createClient } = supabase
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
+// Extrai o slug da barbearia do subdomínio ou query param (para teste)
 function getSlug() {
-  const host = window.location.hostname
+  const host = window.location.hostname // ex: joao.navalhanobigode.com.br
   const parts = host.split('.')
-  if (parts.length >= 3 && parts[0] !== 'www') return parts[0]
+  // Só extrai subdomínio no domínio real (não em workers.dev / pages.dev)
+  if (parts.length >= 3 && parts[0] !== 'www' && host.includes('navalhanobigode')) return parts[0]
+  // Fallback para testes: ?barbearia=joao
   const params = new URLSearchParams(window.location.search)
   return params.get('barbearia') || 'teste'
 }
 
+// Dias da semana em português
 const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const DIAS_FULL = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
