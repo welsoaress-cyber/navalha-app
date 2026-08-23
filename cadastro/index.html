@@ -230,7 +230,10 @@
       </div>
       <div class="form-group">
         <label class="form-label">Senha (mínimo 6 caracteres)</label>
-        <input class="form-input" id="ownerPass" type="password" placeholder="••••••••">
+        <div style="position:relative;">
+          <input class="form-input" id="ownerPass" type="password" placeholder="••••••••" style="padding-right:48px;">
+          <button type="button" onclick="togglePass()" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--ink-3);font-size:18px;padding:4px;" id="btnPass">👁</button>
+        </div>
       </div>
       <button class="btn-next" id="btnCriar" onclick="createAccount()">Criar minha barbearia 🚀</button>
     </div>
@@ -541,6 +544,13 @@ async function createAccount() {
   const waMsg  = encodeURIComponent(`Olá! Acabei de criar minha barbearia *${shopName}* no Navalha no Bigode.\n\nPlano: *${plan.name}*\nValor pago: *R$ ${total}*\n\nSegue o comprovante do Pix! 🧾`)
   document.getElementById('btnWhats').onclick = () => window.open(`https://wa.me/${WHATSAPP}?text=${waMsg}`)
   goStep(6)
+}
+
+function togglePass() {
+  const inp = document.getElementById('ownerPass')
+  const btn = document.getElementById('btnPass')
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈' }
+  else { inp.type = 'password'; btn.textContent = '👁' }
 }
 
 function showErr(btn, msg) {
