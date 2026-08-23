@@ -49,8 +49,10 @@
   .form-input:focus { border-color: var(--primary); }
   .form-hint { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
   .form-hint strong { color: var(--primary); }
-  .color-row { display: flex; gap: 10px; align-items: center; }
-  .color-preview { width: 44px; height: 44px; border-radius: 10px; border: 2px solid var(--border); flex-shrink: 0; }
+  .color-picker-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; }
+  .color-chip { width: 38px; height: 38px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; transition: transform 0.15s, border-color 0.15s; flex-shrink: 0; }
+  .color-chip:hover { transform: scale(1.15); }
+  .color-chip.selected { border-color: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,0.4); transform: scale(1.15); }
 
   /* BUTTONS */
   .btn-next { width: 100%; padding: 14px; border-radius: 10px; border: none; background: var(--primary); color: #0F172A; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; margin-top: 8px; transition: all 0.2s; }
@@ -154,11 +156,9 @@
       </div>
       <div class="form-group">
         <label class="form-label">Cor da sua marca</label>
-        <div class="color-row">
-          <input class="form-input" id="shopColor" type="text" value="#D4A843" oninput="updateColor()" style="flex:1">
-          <div class="color-preview" id="colorPreview" style="background:#D4A843"></div>
-        </div>
-        <div class="form-hint">Código hex (ex: #1a6b3c para verde)</div>
+        <div class="color-picker-row" id="colorPalette"></div>
+        <input type="hidden" id="shopColor" value="#D4A843">
+        <div class="form-hint">Escolha a cor que representa sua barbearia</div>
       </div>
       <button class="btn-next" onclick="validateStep2()">Continuar →</button>
     </div>
@@ -415,6 +415,24 @@ function goStep(n) {
 }
 
 // ── Validações ──
+// ── Color picker ──
+const COLORS = [
+  '#D4A843','#1a6b3c','#1e40af','#7c3aed','#be123c',
+  '#b45309','#0f766e','#0369a1','#6d28d9','#9f1239',
+  '#000000','#374151','#6b7280','#dc2626','#16a34a'
+]
+function renderColorPicker() {
+  const current = document.getElementById('shopColor').value
+  document.getElementById('colorPalette').innerHTML = COLORS.map(c => `
+    <div class="color-chip${c===current?' selected':''}" style="background:${c}" onclick="selectColor('${c}')" title="${c}"></div>
+  `).join('')
+}
+function selectColor(c) {
+  document.getElementById('shopColor').value = c
+  renderColorPicker()
+}
+renderColorPicker()
+
 function autoSlug() {
   const name = document.getElementById('shopName').value
   const slug = name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'')
@@ -424,9 +442,6 @@ function autoSlug() {
 function updateSlugPreview() {
   const slug = document.getElementById('shopSlug').value.toLowerCase().replace(/[^a-z0-9-]/g,'')
   document.getElementById('slugPreview').textContent = slug || 'sua-barbearia'
-}
-function updateColor() {
-  document.getElementById('colorPreview').style.background = document.getElementById('shopColor').value
 }
 
 function validateStep2() {
