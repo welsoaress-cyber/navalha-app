@@ -59,11 +59,30 @@
 </head>
 <body>
 
+<div id="loginGate" style="display:none; min-height:100dvh; align-items:center; justify-content:center; padding:20px;">
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:32px; width:100%; max-width:400px;">
+    <div class="nav-brand" style="margin-bottom:4px;">💈 Navalha no Bigode</div>
+    <div class="nav-sub" style="margin-bottom:24px;">Painel Administrativo — acesso restrito</div>
+    <div class="form-group">
+      <label class="form-label">E-mail</label>
+      <input class="form-input" id="admEmail" type="email" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Senha</label>
+      <input class="form-input" id="admPass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')adminLogin()">
+    </div>
+    <div id="admErr" style="display:none; color:var(--red); font-size:13px; margin-bottom:10px;"></div>
+    <button class="btn-add" style="width:100%;" onclick="adminLogin()">Entrar</button>
+  </div>
+</div>
+
+<div id="adminApp" style="display:none;">
 <nav class="nav">
   <div>
     <div class="nav-brand">💈 Navalha no Bigode</div>
     <div class="nav-sub">Painel Administrativo</div>
   </div>
+  <button class="action-btn" onclick="adminLogout()">Sair</button>
 </nav>
 
 <main class="content">
@@ -73,11 +92,48 @@
   </div>
   <div id="clientList"><div class="loading"><div class="spinner"></div> Carregando…</div></div>
 </main>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/js/config.js"></script>
 <script>
+const ADMIN_EMAIL = 'welsoaress@gmail.com'
 let clients = []
+
+async function initAdmin() {
+  const { data: { session } } = await db.auth.getSession()
+  if (session && session.user.email === ADMIN_EMAIL) {
+    document.getElementById('loginGate').style.display = 'none'
+    document.getElementById('adminApp').style.display = 'block'
+    loadClients()
+  } else {
+    if (session) await db.auth.signOut()
+    document.getElementById('adminApp').style.display = 'none'
+    document.getElementById('loginGate').style.display = 'flex'
+  }
+}
+
+async function adminLogin() {
+  const email = document.getElementById('admEmail').value.trim()
+  const pass  = document.getElementById('admPass').value
+  const errEl = document.getElementById('admErr')
+  errEl.style.display = 'none'
+  if (email.toLowerCase() !== ADMIN_EMAIL) {
+    errEl.textContent = 'Este e-mail não tem acesso ao painel administrativo.'
+    errEl.style.display = 'block'; return
+  }
+  const { error } = await db.auth.signInWithPassword({ email, password: pass })
+  if (error) {
+    errEl.textContent = 'E-mail ou senha incorretos.'
+    errEl.style.display = 'block'; return
+  }
+  initAdmin()
+}
+
+async function adminLogout() {
+  await db.auth.signOut()
+  initAdmin()
+}
 
 const PLAN_CONFIG = {
   solo:   { max_barbers: 1, changes_limit: 10 },
@@ -197,7 +253,7 @@ async function saveClient() {
 
 function closeModal() { document.getElementById('newModal')?.remove() }
 
-loadClients()
+initAdmin()
 </script>
 </body>
 </html>
