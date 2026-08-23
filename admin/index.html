@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Navalha no Bigode</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@700;800&display=swap">
+<style>
+  :root { --primary: #D4A843; --bg: #0F172A; --surface: #1E293B; --border: #334155; --ink: #F8FAFC; --ink-2: #94A3B8; --ink-3: #475569; --green: #22c55e; --red: #ef4444; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--ink); min-height: 100dvh; }
+  .nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .nav-brand { font-family: 'Sora', sans-serif; font-size: 18px; font-weight: 800; color: var(--primary); }
+  .nav-sub { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+  .content { padding: 28px 24px; max-width: 960px; margin: 0 auto; }
+  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .section-title { font-family: 'Sora', sans-serif; font-size: 22px; font-weight: 800; }
+  .btn-add { background: var(--primary); color: #0F172A; border: none; border-radius: 10px; padding: 12px 20px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .client-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
+  .client-avatar { width: 48px; height: 48px; border-radius: 12px; background: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; font-family: 'Sora', sans-serif; color: #0F172A; flex-shrink: 0; }
+  .client-body { flex: 1; }
+  .client-name { font-weight: 700; font-size: 16px; }
+  .client-slug { font-size: 13px; color: var(--ink-2); margin-top: 3px; }
+  .plan-pill { font-size: 11px; font-weight: 700; border-radius: 20px; padding: 3px 10px; text-transform: capitalize; }
+  .plan-solo { background: rgba(148,163,184,0.15); color: var(--ink-2); }
+  .plan-equipe { background: rgba(212,168,67,0.15); color: var(--primary); }
+  .plan-black { background: rgba(255,255,255,0.08); color: var(--ink); }
+  .status-pill { font-size: 11px; font-weight: 700; border-radius: 20px; padding: 3px 10px; }
+  .status-active { background: rgba(34,197,94,0.12); color: var(--green); }
+  .status-suspended { background: rgba(239,68,68,0.12); color: var(--red); }
+  .status-trial { background: rgba(212,168,67,0.12); color: var(--primary); }
+  .client-actions { display: flex; gap: 8px; }
+  .action-btn { border: 1px solid var(--border); background: none; border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; color: var(--ink-2); transition: all 0.18s; }
+  .action-btn:hover { color: var(--ink); border-color: var(--ink-2); }
+  .action-btn.suspend { border-color: var(--red); color: var(--red); }
+  .action-btn.suspend:hover { background: var(--red); color: #fff; }
+  .action-btn.activate { border-color: var(--green); color: var(--green); }
+  .action-btn.activate:hover { background: var(--green); color: #fff; }
+  .link-btn { font-size: 12px; color: var(--primary); text-decoration: none; border: 1px solid rgba(212,168,67,0.3); border-radius: 8px; padding: 7px 14px; font-weight: 600; }
+  /* MODAL */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 32px; width: 100%; max-width: 480px; }
+  .modal-title { font-family: 'Sora', sans-serif; font-size: 20px; font-weight: 800; margin-bottom: 24px; }
+  .form-group { margin-bottom: 14px; }
+  .form-label { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; display: block; }
+  .form-input, .form-select { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1.5px solid var(--border); font-size: 15px; font-family: inherit; background: var(--bg); color: var(--ink); outline: none; }
+  .form-input:focus, .form-select:focus { border-color: var(--primary); }
+  .form-hint { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 24px; }
+  .btn-cancel { flex: 1; padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: none; color: var(--ink-2); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn-save { flex: 1; padding: 14px; border-radius: 10px; border: none; background: var(--primary); color: #0F172A; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .loading { display: flex; align-items: center; justify-content: center; padding: 60px; color: var(--ink-3); font-size: 14px; }
+  .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 10px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { text-align: center; padding: 60px; color: var(--ink-3); }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div>
+    <div class="nav-brand">💈 Navalha no Bigode</div>
+    <div class="nav-sub">Painel Administrativo</div>
+  </div>
+</nav>
+
+<main class="content">
+  <div class="section-header">
+    <div class="section-title">Clientes</div>
+    <button class="btn-add" onclick="openNewModal()">+ Novo cliente</button>
+  </div>
+  <div id="clientList"><div class="loading"><div class="spinner"></div> Carregando…</div></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/js/config.js"></script>
+<script>
+let clients = []
+
+const PLAN_CONFIG = {
+  solo:   { max_barbers: 1, changes_limit: 10 },
+  equipe: { max_barbers: 3, changes_limit: 30 },
+  black:  { max_barbers: 5, changes_limit: null }
+}
+
+async function loadClients() {
+  const { data } = await db.from('barbershops').select('*').order('created_at', { ascending: false })
+  clients = data || []
+  renderClients()
+}
+
+function renderClients() {
+  const el = document.getElementById('clientList')
+  if (!clients.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><p>Nenhum cliente cadastrado ainda.</p></div>'
+    return
+  }
+  el.innerHTML = clients.map(c => `
+    <div class="client-card">
+      <div class="client-avatar">${c.name.charAt(0)}</div>
+      <div class="client-body">
+        <div class="client-name">${c.name}</div>
+        <div class="client-slug">🔗 ${c.slug}.navalhanobigode.com.br</div>
+      </div>
+      <span class="plan-pill plan-${c.plan}">${c.plan}</span>
+      <span class="status-pill status-${c.status}">${statusLabel(c.status)}</span>
+      <div class="client-actions">
+        <a class="link-btn" href="/?barbearia=${c.slug}" target="_blank">Ver página ↗</a>
+        ${c.status === 'active'
+          ? `<button class="action-btn suspend" onclick="toggleStatus('${c.id}','suspended')">Suspender</button>`
+          : `<button class="action-btn activate" onclick="toggleStatus('${c.id}','active')">Reativar</button>`
+        }
+      </div>
+    </div>`).join('')
+}
+
+function statusLabel(s) {
+  return { active: 'Ativo', suspended: 'Suspenso', trial: 'Trial' }[s] || s
+}
+
+async function toggleStatus(id, status) {
+  const label = status === 'suspended' ? 'Suspender' : 'Reativar'
+  if (!confirm(`${label} este cliente?`)) return
+  await db.from('barbershops').update({ status }).eq('id', id)
+  loadClients()
+}
+
+function openNewModal() {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'newModal'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">Novo Cliente</div>
+      <div class="form-group">
+        <label class="form-label">Nome da barbearia</label>
+        <input class="form-input" id="nName" type="text" placeholder="Barbearia do João">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Slug (URL)</label>
+        <input class="form-input" id="nSlug" type="text" placeholder="joao" oninput="autoSlug(this)">
+        <div class="form-hint">Ficará: <strong id="slugPreview">joao</strong>.navalhanobigode.com.br</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">E-mail do dono</label>
+        <input class="form-input" id="nEmail" type="email" placeholder="joao@email.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Plano</label>
+        <select class="form-select" id="nPlan" onchange="updatePlanInfo()">
+          <option value="solo">Solo — R$ 99/mês (1 barbeiro)</option>
+          <option value="equipe" selected>Equipe — R$ 149/mês (3 barbeiros)</option>
+          <option value="black">Black — R$ 299/mês (5 barbeiros)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Cor principal (hex)</label>
+        <input class="form-input" id="nColor" type="text" value="#D4A843" placeholder="#D4A843">
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
+        <button class="btn-save" onclick="saveClient()">Criar cliente</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+}
+
+function autoSlug(input) {
+  const slug = input.value.toLowerCase().replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'')
+  document.getElementById('slugPreview').textContent = slug || 'slug'
+}
+
+async function saveClient() {
+  const name = document.getElementById('nName').value.trim()
+  const slug = document.getElementById('nSlug').value.toLowerCase().replace(/[^a-z0-9-]/g,'').trim()
+  const email = document.getElementById('nEmail').value.trim()
+  const plan = document.getElementById('nPlan').value
+  const color = document.getElementById('nColor').value.trim() || '#D4A843'
+
+  if (!name || !slug) { alert('Nome e slug são obrigatórios.'); return }
+
+  const cfg = PLAN_CONFIG[plan]
+  const { error } = await db.from('barbershops').insert({
+    name, slug, owner_email: email, plan,
+    primary_color: color,
+    status: 'active',
+    max_barbers: cfg.max_barbers,
+    changes_limit: cfg.changes_limit
+  })
+
+  if (error) { alert('Erro: ' + (error.message || 'slug já existe?')); return }
+  closeModal()
+  loadClients()
+}
+
+function closeModal() { document.getElementById('newModal')?.remove() }
+
+loadClients()
+</script>
+</body>
+</html>
