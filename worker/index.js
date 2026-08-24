@@ -58,6 +58,10 @@ async function createPix(request, env) {
   const amount = plan.monthly + plan.setup
   const origin = new URL(request.url).origin
 
+  // QR expira em 5 minutos (horário expresso em UTC-3)
+  const expMs = Date.now() + 5 * 60 * 1000
+  const expStr = new Date(expMs - 3 * 3600 * 1000).toISOString().replace('Z', '-03:00')
+
   const pr = await mp(env, '/v1/payments', {
     method: 'POST',
     headers: { 'X-Idempotency-Key': crypto.randomUUID() },
@@ -68,6 +72,7 @@ async function createPix(request, env) {
       payer: { email: shop.owner_email || 'cliente@navalhanobigode.com.br' },
       external_reference: shop.id,
       notification_url: origin + '/api/mp-webhook',
+      date_of_expiration: expStr,
     })
   })
   const pd = await pr.json()
@@ -80,6 +85,7 @@ async function createPix(request, env) {
     description: `Plano ${plan.name} — 1º mês R$ ${plan.monthly} + Kit R$ ${plan.setup}`,
     qr_code: tx && tx.qr_code,
     qr_base64: tx && tx.qr_code_base64,
+    expires_in: 300,
   })
 }
 

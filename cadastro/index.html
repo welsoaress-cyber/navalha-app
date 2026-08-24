@@ -261,6 +261,7 @@
           <div class="pix-key-label">Ou use o Pix copia e cola</div>
           <button class="btn-copy" id="btnCopyCode" onclick="copyPixCode()">📋 Copiar código Pix</button>
           <div id="payStatus" style="margin-top:14px;font-size:14px;color:#94A3B8;">⏳ Aguardando pagamento… assim que o Pix cair, sua barbearia é ativada automaticamente.</div>
+          <div id="pixTimer" style="margin-top:8px;font-size:13px;color:#94A3B8;font-variant-numeric:tabular-nums;"></div>
         </div>
       </div>
 
@@ -596,7 +597,10 @@ async function createAccount() {
 }
 
 // ── Pagamento automático via Mercado Pago ──
+let _pollTimer = null, _cdTimer = null
+
 async function startPix(shopId) {
+  window._shopId = shopId
   try {
     const r = await fetch('/api/pix', {
       method: 'POST',
@@ -612,18 +616,45 @@ async function startPix(shopId) {
     window._pixCode = d.qr_code
     document.getElementById('payManual').style.display = 'none'
     document.getElementById('payAuto').style.display = 'block'
+    const st = document.getElementById('payStatus')
+    st.innerHTML = '⏳ Aguardando pagamento… assim que o Pix cair, sua barbearia é ativada automaticamente.'
+    st.style.color = '#94A3B8'
+    startCountdown(d.expires_in || 300)
     pollPix(d.payment_id)
   } catch (e) { /* mantém o fluxo manual */ }
 }
 
+function startCountdown(secs) {
+  clearInterval(_cdTimer)
+  const el = document.getElementById('pixTimer')
+  let s = secs
+  const tick = () => {
+    if (s <= 0) {
+      clearInterval(_cdTimer)
+      clearInterval(_pollTimer)
+      el.innerHTML = '<button class="btn-copy" onclick="startPix(window._shopId)">🔄 QR Code expirou — gerar um novo</button>'
+      return
+    }
+    const m = Math.floor(s / 60)
+    const ss = String(s % 60).padStart(2, '0')
+    el.textContent = `⏱ Este QR Code vale por ${m}:${ss}`
+    s--
+  }
+  tick()
+  _cdTimer = setInterval(tick, 1000)
+}
+
 function pollPix(paymentId) {
-  const timer = setInterval(async () => {
+  clearInterval(_pollTimer)
+  _pollTimer = setInterval(async () => {
     try {
       const r = await fetch('/api/pix-status?id=' + paymentId)
       if (!r.ok) return
       const d = await r.json()
       if (d.status === 'approved') {
-        clearInterval(timer)
+        clearInterval(_pollTimer)
+        clearInterval(_cdTimer)
+        document.getElementById('pixTimer').textContent = ''
         const el = document.getElementById('payStatus')
         el.innerHTML = '✅ <strong>Pagamento confirmado!</strong> Sua barbearia já está ativa — bom trabalho! 💈'
         el.style.color = '#22c55e'
