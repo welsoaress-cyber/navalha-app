@@ -124,7 +124,7 @@ async function adminLogin() {
   }
   const { error } = await db.auth.signInWithPassword({ email, password: pass })
   if (error) {
-    errEl.textContent = 'E-mail ou senha incorretos.'
+    errEl.textContent = 'Erro: ' + (error.message || 'desconhecido') + (error.status ? ' (código ' + error.status + ')' : '')
     errEl.style.display = 'block'; return
   }
   initAdmin()
