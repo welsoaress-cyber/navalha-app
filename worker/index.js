@@ -14,6 +14,7 @@ export default {
     const url = new URL(request.url)
     try {
       if (url.pathname === '/api/pix' && request.method === 'POST') return await createPix(request, env)
+      if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
       if (url.pathname === '/api/pix-status') return await pixStatus(url, env)
       if (url.pathname === '/api/mp-webhook') return await mpWebhook(request, url, env)
     } catch (e) {
@@ -124,6 +125,67 @@ async function activate(env, shopId) {
     headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
     body: JSON.stringify({ status: 'active' })
   })
+}
+
+// E-mail de boas-vindas com orientações de uso (via Resend)
+async function sendWelcome(request, env) {
+  if (!env.RESEND_API_KEY || !env.SUPABASE_SERVICE_KEY) return json({ sent: false, reason: 'not_configured' })
+
+  let body
+  try { body = await request.json() } catch { return json({ error: 'bad_request' }, 400) }
+  if (!body.barbershop_id) return json({ error: 'bad_request' }, 400)
+
+  const sr = await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(body.barbershop_id) + '&select=id,name,slug,plan,owner_email', {
+    headers: sbHeaders(env)
+  })
+  const rows = await sr.json()
+  const shop = Array.isArray(rows) ? rows[0] : null
+  if (!shop || !shop.owner_email) return json({ sent: false, reason: 'not_found' })
+
+  const origin  = new URL(request.url).origin
+  const appLink = origin + '/?barbearia=' + shop.slug
+  const panel   = origin + '/painel/'
+
+  const html = `
+  <div style="font-family:Arial,Helvetica,sans-serif;background:#0F172A;padding:32px 16px;">
+    <div style="max-width:560px;margin:0 auto;background:#1E293B;border-radius:16px;padding:32px;color:#F8FAFC;">
+      <h1 style="color:#D4A843;font-size:22px;margin:0 0 6px;">💈 Navalha no Bigode</h1>
+      <p style="color:#94A3B8;font-size:14px;margin:0 0 24px;">Sua barbearia digital está pronta!</p>
+      <h2 style="font-size:18px;margin:0 0 16px;">Bem-vindo, ${shop.name}! 🎉</h2>
+      <p style="font-size:14px;line-height:1.6;color:#CBD5E1;">Seu cadastro foi concluído. Guarde este e-mail — aqui está tudo o que você precisa para começar:</p>
+
+      <div style="background:#0F172A;border-radius:12px;padding:18px;margin:18px 0;">
+        <p style="margin:0 0 4px;font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:1px;">Link de agendamento (envie aos seus clientes)</p>
+        <p style="margin:0 0 14px;"><a href="${appLink}" style="color:#D4A843;font-size:14px;word-break:break-all;">${appLink}</a></p>
+        <p style="margin:0 0 4px;font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:1px;">Seu painel (agenda e configurações)</p>
+        <p style="margin:0 0 14px;"><a href="${panel}" style="color:#D4A843;font-size:14px;">${panel}</a></p>
+        <p style="margin:0 0 4px;font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:1px;">Login</p>
+        <p style="margin:0;font-size:14px;color:#F8FAFC;">${shop.owner_email}<br><span style="color:#94A3B8;font-size:12px;">Senha: a que você criou no cadastro</span></p>
+      </div>
+
+      <h3 style="font-size:15px;margin:22px 0 10px;color:#D4A843;">Primeiros passos</h3>
+      <ol style="font-size:14px;line-height:1.9;color:#CBD5E1;padding-left:20px;margin:0;">
+        <li><strong>Salve o app no celular:</strong> abra o link de agendamento e use "Adicionar à tela inicial" no navegador.</li>
+        <li><strong>Divulgue:</strong> mande o link de agendamento no WhatsApp dos seus clientes e coloque na bio do Instagram.</li>
+        <li><strong>Confira seus horários:</strong> no painel, ajuste os dias e horários de atendimento quando precisar.</li>
+        <li><strong>Acompanhe a agenda:</strong> os agendamentos aparecem no painel em tempo real.</li>
+      </ol>
+
+      <p style="font-size:13px;color:#94A3B8;margin-top:24px;">Dúvidas? Fale com a gente: <a href="https://wa.me/5511954490001" style="color:#D4A843;">WhatsApp</a></p>
+    </div>
+  </div>`
+
+  const mr = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: env.MAIL_FROM || 'Navalha no Bigode <contato@navalhanobigode.com.br>',
+      to: [shop.owner_email],
+      subject: `💈 ${shop.name} — seu app está pronto! Dados de acesso e primeiros passos`,
+      html
+    })
+  })
+  return json({ sent: mr.ok })
 }
 
 function json(obj, status = 200) {

@@ -605,6 +605,8 @@ async function createAccount() {
 
   goStep(6)
   startPix(shopId)
+  // E-mail de boas-vindas com orientações (não bloqueia o fluxo)
+  fetch('/api/welcome', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: shopId }) }).catch(() => {})
 }
 
 // ── Pagamento automático via Mercado Pago ──
