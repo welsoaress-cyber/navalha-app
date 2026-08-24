@@ -534,7 +534,44 @@ async function createAccount() {
 
   // 1. Auth
   const { error: authErr } = await db.auth.signUp({ email, password: pass })
-  if (authErr) { showErr(btn, 'Erro: ' + (authErr.message || 'Tente novamente.')); return }
+  if (authErr) {
+    const msg = (authErr.message || '').toLowerCase()
+    if (msg.includes('already') || msg.includes('registered')) {
+      // E-mail já usado: tenta entrar e retomar o cadastro de onde parou
+      const { error: loginErr } = await db.auth.signInWithPassword({ email, password: pass })
+      if (loginErr) {
+        showErr(btn, 'Você já começou um cadastro com este e-mail. Digite a MESMA senha que usou na primeira vez para continuar de onde parou.')
+        return
+      }
+      const { data: existing } = await db.from('barbershops')
+        .select('id, slug, name, plan, status')
+        .eq('owner_email', email)
+        .maybeSingle()
+      if (existing) {
+        // Barbearia já criada antes: vai direto pro pagamento (ou painel, se já ativa)
+        if (existing.status === 'active') {
+          alert('Sua barbearia já está ativa! Você será levado ao seu painel.')
+          window.location.href = '/painel/'
+          return
+        }
+        const exPlan  = PLANS[existing.plan] || plan
+        const exTotal = exPlan.monthly + exPlan.setup
+        const waMsg2  = encodeURIComponent(`Olá! Estou retomando o cadastro da barbearia *${existing.name}* no Navalha no Bigode.\n\nPlano: *${exPlan.name}*\nValor: *R$ ${exTotal}*`)
+        document.getElementById('btnWhats').onclick = () => window.open(`https://wa.me/${WHATSAPP}?text=${waMsg2}`)
+        const appLink2 = `${window.location.origin}/?barbearia=${existing.slug}`
+        document.getElementById('accAppLink').textContent = appLink2
+        document.getElementById('accEmail').textContent = email
+        window._appLink = appLink2
+        goStep(6)
+        startPix(existing.id)
+        return
+      }
+      // Conta existe mas sem barbearia: segue o fluxo normal e cria agora
+    } else {
+      showErr(btn, 'Erro: ' + (authErr.message || 'Tente novamente.'))
+      return
+    }
+  }
 
   // 2. Barbearia
   const { data: shopData, error: shopErr } = await db.from('barbershops').insert({
