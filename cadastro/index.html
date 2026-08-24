@@ -252,6 +252,20 @@
       <div class="step-label">Passo 6 de 6</div>
       <div class="step-title">🎉 Barbearia criada!</div>
       <div class="step-sub">Agora só falta o pagamento para ativarmos tudo.</div>
+      <!-- Pagamento automático (QR Code Mercado Pago) -->
+      <div id="payAuto" style="display:none;">
+        <div class="pix-box">
+          <div class="pix-amount" id="pixAmountAuto"></div>
+          <div class="pix-desc" id="pixDescAuto"></div>
+          <img id="pixQrImg" alt="QR Code Pix" style="width:220px;height:220px;border-radius:12px;background:#fff;padding:10px;margin:14px auto 6px;display:block;">
+          <div class="pix-key-label">Ou use o Pix copia e cola</div>
+          <button class="btn-copy" id="btnCopyCode" onclick="copyPixCode()">📋 Copiar código Pix</button>
+          <div id="payStatus" style="margin-top:14px;font-size:14px;color:#94A3B8;">⏳ Aguardando pagamento… assim que o Pix cair, sua barbearia é ativada automaticamente.</div>
+        </div>
+      </div>
+
+      <!-- Pagamento manual (reserva) -->
+      <div id="payManual">
       <div class="pix-box">
         <div class="pix-amount" id="pixAmount">R$ 149</div>
         <div class="pix-desc" id="pixDesc"></div>
@@ -269,6 +283,7 @@
         <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
         Enviar comprovante pelo WhatsApp
       </button>
+      </div>
       <div class="access-box">
         <div class="access-title">🔑 Seus dados de acesso</div>
         <div class="access-row">
@@ -577,6 +592,52 @@ async function createAccount() {
   window._appLink = appLink
 
   goStep(6)
+  startPix(shopId)
+}
+
+// ── Pagamento automático via Mercado Pago ──
+async function startPix(shopId) {
+  try {
+    const r = await fetch('/api/pix', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ barbershop_id: shopId })
+    })
+    if (!r.ok) return // configuração ausente → mantém o fluxo manual
+    const d = await r.json()
+    if (!d.qr_base64 || !d.qr_code) return
+    document.getElementById('pixQrImg').src = 'data:image/png;base64,' + d.qr_base64
+    document.getElementById('pixAmountAuto').textContent = 'R$ ' + d.amount
+    document.getElementById('pixDescAuto').textContent = d.description
+    window._pixCode = d.qr_code
+    document.getElementById('payManual').style.display = 'none'
+    document.getElementById('payAuto').style.display = 'block'
+    pollPix(d.payment_id)
+  } catch (e) { /* mantém o fluxo manual */ }
+}
+
+function pollPix(paymentId) {
+  const timer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/pix-status?id=' + paymentId)
+      if (!r.ok) return
+      const d = await r.json()
+      if (d.status === 'approved') {
+        clearInterval(timer)
+        const el = document.getElementById('payStatus')
+        el.innerHTML = '✅ <strong>Pagamento confirmado!</strong> Sua barbearia já está ativa — bom trabalho! 💈'
+        el.style.color = '#22c55e'
+      }
+    } catch (e) {}
+  }, 5000)
+}
+
+function copyPixCode() {
+  navigator.clipboard.writeText(window._pixCode || '').then(() => {
+    const b = document.getElementById('btnCopyCode')
+    b.classList.add('copied'); b.textContent = '✅ Copiado!'
+    setTimeout(() => { b.classList.remove('copied'); b.textContent = '📋 Copiar código Pix' }, 2000)
+  })
 }
 
 function copyAppLink() {

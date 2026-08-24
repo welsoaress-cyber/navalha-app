@@ -1,0 +1,12 @@
+{
+  "name": "navalha-app",
+  "main": "worker/index.js",
+  "compatibility_date": "2025-03-01",
+  "assets": {
+    "directory": "./",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    "SUPABASE_URL": "https://txmdehfleltpqokhyzex.supabase.co"
+  }
+}
