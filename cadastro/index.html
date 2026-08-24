@@ -271,6 +271,12 @@
           <div style="font-size:15px;color:#94A3B8;padding:20px 0;"><span class="spinner"></span> Gerando seu QR Code Pix…</div>
         </div>
       </div>
+      <div class="access-box" id="cardPreviewBox" style="display:none;">
+        <div class="access-title">💳 Seus cartões — já estão sendo preparados</div>
+        <p style="font-size:13px;color:var(--ink-2, #94A3B8);margin:-4px 0 14px;">Cartões físicos com o QR Code da sua barbearia, para seus clientes agendarem na hora. A primeira remessa é por nossa conta.</p>
+        <canvas id="cardFrontPrev" style="width:100%;border-radius:10px;display:block;margin-bottom:10px;"></canvas>
+        <canvas id="cardBackPrev" style="width:100%;border-radius:10px;display:block;"></canvas>
+      </div>
       <div class="access-box">
         <div class="access-title">🔑 Seus dados de acesso</div>
         <div class="access-row">
@@ -302,6 +308,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="/js/config.js"></script>
 <script>
 // ─── CONFIGURE AQUI ────────────────────────────────────
@@ -531,7 +538,7 @@ async function createAccount() {
         return
       }
       const { data: existing } = await db.from('barbershops')
-        .select('id, slug, name, plan, status')
+        .select('id, slug, name, plan, status, primary_color')
         .eq('owner_email', email)
         .maybeSingle()
       if (existing) {
@@ -547,6 +554,7 @@ async function createAccount() {
         window._appLink = appLink2
         goStep(6)
         startPix(existing.id)
+        renderCardPreview(existing.name, existing.primary_color || '#D4A843', existing.slug)
         return
       }
       // Conta existe mas sem barbearia: segue o fluxo normal e cria agora
@@ -609,6 +617,7 @@ async function createAccount() {
 
   goStep(6)
   startPix(shopId)
+  renderCardPreview(shopName, color, slug)
   // E-mail de boas-vindas com orientações (não bloqueia o fluxo)
   fetch('/api/welcome', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: shopId }) }).catch(() => {})
 }
@@ -699,6 +708,83 @@ function copyPixCode() {
     b.classList.add('copied'); b.textContent = '✅ Copiado!'
     setTimeout(() => { b.classList.remove('copied'); b.textContent = '📋 Copiar código Pix' }, 2000)
   })
+}
+
+// ── Pré-visualização do cartão físico ──
+async function renderCardPreview(name, cor, slug) {
+  try {
+    await document.fonts.load('800 84px Sora')
+    await document.fonts.load('700 40px Sora')
+    await document.fonts.load('600 32px Inter')
+    const url  = `${slug}.navalhanobigode.com.br`
+    const link = `https://${url}`
+    drawCardFront(document.getElementById('cardFrontPrev'), name, cor, url)
+    drawCardBack(document.getElementById('cardBackPrev'), cor, url, link)
+    document.getElementById('cardPreviewBox').style.display = 'block'
+  } catch (e) { /* preview é opcional, nunca trava o fluxo */ }
+}
+
+function drawCardFront(c, name, cor, url) {
+  const W = 1110, H = 638
+  c.width = W; c.height = H
+  const x = c.getContext('2d')
+  x.fillStyle = '#0F172A'; x.fillRect(0, 0, W, H)
+  x.fillStyle = cor; x.fillRect(0, 0, 26, H)
+  x.save()
+  x.translate(W - 150, 0); x.rotate(0.5)
+  for (let i = -6; i < 14; i++) {
+    x.fillStyle = i % 2 ? 'rgba(212,168,67,0.10)' : 'rgba(255,255,255,0.04)'
+    x.fillRect(i * 44, -200, 22, 1200)
+  }
+  x.restore()
+  x.fillStyle = '#F8FAFC'; x.font = '800 84px Sora'; x.textAlign = 'center'
+  cardWrapText(x, name, W / 2, H / 2 - 40, W - 220, 92)
+  x.strokeStyle = cor; x.lineWidth = 4
+  x.beginPath(); x.moveTo(W / 2 - 90, H / 2 + 40); x.lineTo(W / 2 + 90, H / 2 + 40); x.stroke()
+  x.fillStyle = cor; x.font = '700 40px Sora'
+  x.fillText('Agende seu horário', W / 2, H / 2 + 118)
+  x.fillStyle = '#94A3B8'; x.font = '600 32px Inter'
+  x.fillText(url, W / 2, H - 78)
+}
+
+function drawCardBack(c, cor, url, link) {
+  const W = 1110, H = 638
+  c.width = W; c.height = H
+  const x = c.getContext('2d')
+  x.fillStyle = '#0F172A'; x.fillRect(0, 0, W, H)
+  x.fillStyle = cor; x.fillRect(W - 26, 0, 26, H)
+  const qr = qrcode(0, 'M'); qr.addData(link); qr.make()
+  const n = qr.getModuleCount(), qsize = 400, cell = qsize / n
+  const qx = 110, qy = (H - qsize) / 2
+  x.fillStyle = '#FFFFFF'
+  x.beginPath(); x.roundRect(qx - 26, qy - 26, qsize + 52, qsize + 52, 24); x.fill()
+  x.fillStyle = '#0F172A'
+  for (let r = 0; r < n; r++)
+    for (let col = 0; col < n; col++)
+      if (qr.isDark(r, col)) x.fillRect(qx + col * cell, qy + r * cell, Math.ceil(cell), Math.ceil(cell))
+  const tx = qx + qsize + 110
+  x.textAlign = 'left'
+  x.fillStyle = '#F8FAFC'; x.font = '800 56px Sora'
+  cardWrapText(x, 'Aponte a câmera e agende', tx, H / 2 - 90, W - tx - 90, 64, true)
+  x.fillStyle = '#94A3B8'; x.font = '600 30px Inter'
+  x.fillText('Escolha o serviço, o dia e o horário.', tx, H / 2 + 46)
+  x.fillText('Rápido, sem ligação e sem espera.', tx, H / 2 + 92)
+  x.fillStyle = cor; x.font = '700 32px Inter'
+  x.fillText(url, tx, H / 2 + 168)
+}
+
+function cardWrapText(x, text, cx, cy, maxW, lineH, left) {
+  const words = text.split(' ')
+  const lines = []
+  let line = ''
+  words.forEach(w => {
+    const t = line ? line + ' ' + w : w
+    if (x.measureText(t).width > maxW && line) { lines.push(line); line = w }
+    else line = t
+  })
+  lines.push(line)
+  const startY = cy - ((lines.length - 1) * lineH) / 2
+  lines.forEach((l, i) => x.fillText(l, cx, startY + i * lineH))
 }
 
 function copyAppLink() {
