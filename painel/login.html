@@ -37,6 +37,10 @@
   </div>
   <button class="btn" id="loginBtn" onclick="doLogin()">Entrar</button>
   <div class="err" id="errMsg">E-mail ou senha incorretos.</div>
+  <div style="text-align:center; margin-top:18px;">
+    <a href="#" onclick="forgotPass(); return false" style="color:var(--ink-2); font-size:13px; text-decoration:underline;">Esqueci minha senha</a>
+  </div>
+  <div class="err" id="okMsg" style="color:#4ade80;">Enviamos um link de redefinição para seu e-mail.</div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -54,13 +58,34 @@ async function doLogin() {
   const { error } = await db.auth.signInWithPassword({ email, password })
 
   if (error) {
-    document.getElementById('errMsg').style.display = 'block'
+    const errEl = document.getElementById('errMsg')
+    errEl.textContent = 'E-mail ou senha incorretos.'
+    errEl.style.display = 'block'
     btn.disabled = false
     btn.textContent = 'Entrar'
     return
   }
 
   window.location.href = '/painel/'
+}
+
+async function forgotPass() {
+  const email = document.getElementById('email').value.trim()
+  const errEl = document.getElementById('errMsg')
+  const okEl  = document.getElementById('okMsg')
+  errEl.style.display = 'none'; okEl.style.display = 'none'
+  if (!email) {
+    errEl.textContent = 'Digite seu e-mail no campo acima e toque em "Esqueci minha senha".'
+    errEl.style.display = 'block'; return
+  }
+  const { error } = await db.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/painel/nova-senha.html'
+  })
+  if (error) {
+    errEl.textContent = 'Não foi possível enviar o e-mail. Tente de novo em alguns minutos.'
+    errEl.style.display = 'block'; return
+  }
+  okEl.style.display = 'block'
 }
 
 // Enter key

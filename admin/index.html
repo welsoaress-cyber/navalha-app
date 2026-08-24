@@ -141,6 +141,25 @@ const PLAN_CONFIG = {
   black:  { max_barbers: 5, changes_limit: null }
 }
 
+async function resetPass(id) {
+  const c = clients.find(x => x.id === id)
+  if (!c || !c.owner_email) { alert('Este cliente não tem e-mail cadastrado.'); return }
+  if (!confirm(`Enviar link de redefinição de senha para ${c.owner_email}?`)) return
+  const btn = document.getElementById('reset-' + id)
+  btn.disabled = true; btn.textContent = 'Enviando…'
+  const { error } = await db.auth.resetPasswordForEmail(c.owner_email, {
+    redirectTo: window.location.origin + '/painel/nova-senha.html'
+  })
+  btn.disabled = false
+  if (error) {
+    btn.textContent = '🔑 Reset senha'
+    alert('Erro ao enviar: ' + error.message)
+    return
+  }
+  btn.textContent = '✅ Enviado'
+  setTimeout(() => { btn.textContent = '🔑 Reset senha' }, 3000)
+}
+
 async function loadClients() {
   const { data } = await db.from('barbershops').select('*').order('created_at', { ascending: false })
   clients = data || []
@@ -168,6 +187,7 @@ function renderClients() {
           ? `<button class="action-btn suspend" onclick="toggleStatus('${c.id}','suspended')">Suspender</button>`
           : `<button class="action-btn activate" onclick="toggleStatus('${c.id}','active')">Reativar</button>`
         }
+        <button class="action-btn" id="reset-${c.id}" onclick="resetPass('${c.id}')">🔑 Reset senha</button>
       </div>
     </div>`).join('')
 }

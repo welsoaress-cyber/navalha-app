@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nova senha — Navalha no Bigode</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@700;800&display=swap">
+<style>
+  :root { --primary: #D4A843; --bg: #0F172A; --surface: #1E293B; --border: #334155; --ink: #F8FAFC; --ink-2: #94A3B8; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--ink); min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 40px 36px; width: 100%; max-width: 400px; }
+  .logo { font-family: 'Sora', sans-serif; font-size: 22px; font-weight: 800; color: var(--primary); margin-bottom: 8px; }
+  .subtitle { color: var(--ink-2); font-size: 14px; margin-bottom: 32px; }
+  .form-group { margin-bottom: 16px; }
+  .form-label { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; display: block; }
+  .form-input { width: 100%; padding: 14px 16px; border-radius: 10px; border: 1.5px solid var(--border); font-size: 15px; font-family: inherit; background: var(--bg); color: var(--ink); outline: none; transition: border-color 0.18s; }
+  .form-input:focus { border-color: var(--primary); }
+  .btn { width: 100%; padding: 15px; border-radius: 10px; background: var(--primary); color: #0F172A; font-size: 15px; font-weight: 700; border: none; cursor: pointer; font-family: inherit; transition: all 0.2s; margin-top: 8px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .msg { font-size: 13px; margin-top: 12px; text-align: center; display: none; }
+  .msg.err { color: #f87171; }
+  .msg.ok { color: #4ade80; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">💈 Navalha no Bigode</div>
+  <div class="subtitle">Crie sua nova senha</div>
+  <div class="form-group">
+    <label class="form-label">Nova senha</label>
+    <div style="position:relative;">
+      <input class="form-input" id="pass1" type="password" placeholder="Mínimo 6 caracteres" style="padding-right:44px;">
+      <button type="button" onclick="togglePass()" id="btnEye" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--ink-2);font-size:18px;padding:4px;">👁</button>
+    </div>
+  </div>
+  <div class="form-group">
+    <label class="form-label">Repita a nova senha</label>
+    <input class="form-input" id="pass2" type="password" placeholder="••••••••">
+  </div>
+  <button class="btn" id="btnSave" onclick="savePass()">Salvar nova senha</button>
+  <div class="msg err" id="errMsg"></div>
+  <div class="msg ok" id="okMsg"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/js/config.js"></script>
+<script>
+let ready = false
+
+// O link do e-mail traz um token que o Supabase transforma em sessão temporária
+db.auth.onAuthStateChange((event, session) => {
+  if (session) ready = true
+})
+db.auth.getSession().then(({ data }) => { if (data.session) ready = true })
+
+async function savePass() {
+  const p1 = document.getElementById('pass1').value
+  const p2 = document.getElementById('pass2').value
+  const errEl = document.getElementById('errMsg')
+  const okEl  = document.getElementById('okMsg')
+  errEl.style.display = 'none'; okEl.style.display = 'none'
+
+  if (p1.length < 6) { errEl.textContent = 'A senha deve ter pelo menos 6 caracteres.'; errEl.style.display = 'block'; return }
+  if (p1 !== p2)     { errEl.textContent = 'As senhas não são iguais.'; errEl.style.display = 'block'; return }
+  if (!ready) {
+    errEl.textContent = 'Link inválido ou expirado. Volte ao login e peça um novo link em "Esqueci minha senha".'
+    errEl.style.display = 'block'; return
+  }
+
+  const btn = document.getElementById('btnSave')
+  btn.disabled = true; btn.textContent = 'Salvando…'
+
+  const { error } = await db.auth.updateUser({ password: p1 })
+  if (error) {
+    errEl.textContent = 'Erro ao salvar: ' + error.message
+    errEl.style.display = 'block'
+    btn.disabled = false; btn.textContent = 'Salvar nova senha'
+    return
+  }
+
+  okEl.textContent = '✅ Senha alterada! Redirecionando para o painel…'
+  okEl.style.display = 'block'
+  setTimeout(() => { window.location.href = '/painel/' }, 1500)
+}
+
+function togglePass() {
+  const inp = document.getElementById('pass1')
+  const btn = document.getElementById('btnEye')
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈' }
+  else { inp.type = 'password'; btn.textContent = '👁' }
+}
+</script>
+</body>
+</html>
