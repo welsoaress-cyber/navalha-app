@@ -157,7 +157,9 @@ function drawBack(name, cor, url, link) {
   x.fillText('Escolha o serviço, o dia e o horário.', tx, H / 2 + 46)
   x.fillText('Rápido, sem ligação e sem espera.', tx, H / 2 + 92)
   x.fillStyle = cor
-  x.font = '700 32px Inter'
+  let fs = 32
+  x.font = `700 ${fs}px Inter`
+  while (fs > 18 && x.measureText(url).width > W - tx - 60) { fs -= 2; x.font = `700 ${fs}px Inter` }
   x.fillText(url, tx, H / 2 + 168)
   return c
 }

@@ -770,7 +770,10 @@ function drawCardBack(c, cor, url, link) {
   x.fillStyle = '#94A3B8'; x.font = '600 30px Inter'
   x.fillText('Escolha o serviço, o dia e o horário.', tx, H / 2 + 46)
   x.fillText('Rápido, sem ligação e sem espera.', tx, H / 2 + 92)
-  x.fillStyle = cor; x.font = '700 32px Inter'
+  x.fillStyle = cor
+  let fs = 32
+  x.font = `700 ${fs}px Inter`
+  while (fs > 18 && x.measureText(url).width > W - tx - 60) { fs -= 2; x.font = `700 ${fs}px Inter` }
   x.fillText(url, tx, H / 2 + 168)
 }
 
