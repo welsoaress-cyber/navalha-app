@@ -160,6 +160,58 @@ async function resetPass(id) {
   setTimeout(() => { btn.textContent = '🔑 Reset senha' }, 3000)
 }
 
+function openSetPass(id) {
+  const c = clients.find(x => x.id === id)
+  if (!c || !c.owner_email) { alert('Este cliente não tem e-mail cadastrado.'); return }
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'setPassModal'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">🔒 Definir senha — ${c.name}</div>
+      <div class="form-group">
+        <label class="form-label">Nova senha para ${c.owner_email}</label>
+        <div style="position:relative;">
+          <input class="form-input" id="spPass" type="text" placeholder="Mínimo 6 caracteres" style="padding-right:44px;">
+          <button type="button" onclick="spToggle()" id="spEye" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--ink-2);font-size:18px;padding:4px;">🙈</button>
+        </div>
+        <div class="form-hint">A senha aparece visível para você conferir antes de salvar.</div>
+      </div>
+      <div id="spErr" style="display:none;color:var(--red);font-size:13px;margin-bottom:10px;"></div>
+      <div class="modal-actions">
+        <button class="action-btn" style="flex:1;" onclick="document.getElementById('setPassModal').remove()">Cancelar</button>
+        <button class="btn-add" style="flex:1;" id="spSave" onclick="saveSetPass('${c.id}')">Salvar senha</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+  document.getElementById('spPass').focus()
+}
+
+function spToggle() {
+  const inp = document.getElementById('spPass')
+  const btn = document.getElementById('spEye')
+  if (inp.type === 'text') { inp.type = 'password'; btn.textContent = '👁' }
+  else { inp.type = 'text'; btn.textContent = '🙈' }
+}
+
+async function saveSetPass(id) {
+  const c = clients.find(x => x.id === id)
+  const pass = document.getElementById('spPass').value
+  const errEl = document.getElementById('spErr')
+  errEl.style.display = 'none'
+  if (pass.length < 6) { errEl.textContent = 'A senha deve ter pelo menos 6 caracteres.'; errEl.style.display = 'block'; return }
+  const btn = document.getElementById('spSave')
+  btn.disabled = true; btn.textContent = 'Salvando…'
+  const { error } = await db.rpc('admin_set_password', { user_email: c.owner_email, new_password: pass })
+  if (error) {
+    btn.disabled = false; btn.textContent = 'Salvar senha'
+    errEl.textContent = 'Erro: ' + error.message
+    errEl.style.display = 'block'; return
+  }
+  document.getElementById('setPassModal').remove()
+  alert(`✅ Senha de ${c.owner_email} alterada para: ${pass}\n\nInforme ao barbeiro por telefone ou WhatsApp.`)
+}
+
 async function loadClients() {
   const { data } = await db.from('barbershops').select('*').order('created_at', { ascending: false })
   clients = data || []
@@ -188,6 +240,7 @@ function renderClients() {
           : `<button class="action-btn activate" onclick="toggleStatus('${c.id}','active')">Reativar</button>`
         }
         <button class="action-btn" id="reset-${c.id}" onclick="resetPass('${c.id}')">🔑 Reset senha</button>
+        <button class="action-btn" onclick="openSetPass('${c.id}')">🔒 Definir senha</button>
       </div>
     </div>`).join('')
 }
