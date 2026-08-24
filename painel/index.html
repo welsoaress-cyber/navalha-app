@@ -106,6 +106,8 @@
   .form-group { margin-bottom: 14px; }
   .form-label { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; display: block; }
   .form-input { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1.5px solid var(--border); font-size: 15px; font-family: inherit; background: var(--bg); color: var(--ink); outline: none; }
+  .form-select { padding: 12px 14px; border-radius: 10px; border: 1.5px solid var(--border); font-size: 14px; font-family: inherit; background: var(--bg); color: var(--ink); outline: none; }
+  .form-hint { font-size: 12px; color: var(--ink-3, #64748b); margin-top: 4px; }
   .form-input:focus { border-color: var(--primary); }
   .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
   .btn-modal-cancel { flex: 1; padding: 13px; border-radius: 10px; border: 1px solid var(--border); background: none; color: var(--ink-2); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
@@ -145,6 +147,7 @@
 <script src="/js/config.js"></script>
 <script>
 let shop = null, barbers = [], services = [], currentTab = 'agenda'
+let role = 'owner', myBarber = null
 let selectedDate = new Date().toISOString().slice(0,10)
 
 async function init() {
@@ -153,16 +156,19 @@ async function init() {
 
   const user = session.user
 
-  const { data: profile } = await db
-    .from('barbers')
-    .select('*, barbershops(*)')
-    .eq('user_id', user.id)
-    .maybeSingle()
+  // Dono da barbearia?
+  const { data: ownShop } = await db.from('barbershops').select('*').eq('owner_email', user.email).maybeSingle()
+  let shopData = ownShop
 
-  let shopData = profile?.barbershops
+  // Se não é dono, é barbeiro da equipe?
   if (!shopData) {
-    const { data: s } = await db.from('barbershops').select('*').eq('owner_email', user.email).maybeSingle()
-    shopData = s
+    const { data: me } = await db.from('barbers').select('*').eq('email', user.email.toLowerCase()).maybeSingle()
+    if (me) {
+      role = 'barber'
+      myBarber = me
+      const { data: s2 } = await db.from('barbershops').select('*').eq('id', me.barbershop_id).maybeSingle()
+      shopData = s2
+    }
   }
 
   if (!shopData) {
@@ -171,8 +177,13 @@ async function init() {
   }
 
   shop = shopData
-  document.getElementById('shopBadge').textContent = shop.name
+  document.getElementById('shopBadge').textContent = role === 'barber' ? `${shop.name} · ${myBarber.name}` : shop.name
   document.title = `Painel — ${shop.name}`
+
+  // Barbeiro da equipe só vê a própria agenda
+  if (role === 'barber') {
+    document.querySelectorAll('.nav-tab').forEach((el, i) => { if (i > 0) el.style.display = 'none' })
+  }
 
   const [{ data: b }, { data: s }] = await Promise.all([
     db.from('barbers').select('*').eq('barbershop_id', shop.id),
@@ -223,10 +234,10 @@ async function loadStats() {
   const weekEnd = new Date(weekStart)
   weekEnd.setDate(weekEnd.getDate() + 6)
 
-  const [{ count: todayCount }, { count: weekCount }] = await Promise.all([
-    db.from('bookings').select('*', {count:'exact', head:true}).eq('barbershop_id', shop.id).eq('date', today).eq('status','confirmed'),
-    db.from('bookings').select('*', {count:'exact', head:true}).eq('barbershop_id', shop.id).gte('date', weekStart.toISOString().slice(0,10)).lte('date', weekEnd.toISOString().slice(0,10)).eq('status','confirmed')
-  ])
+  let qToday = db.from('bookings').select('*', {count:'exact', head:true}).eq('barbershop_id', shop.id).eq('date', today).eq('status','confirmed')
+  let qWeek  = db.from('bookings').select('*', {count:'exact', head:true}).eq('barbershop_id', shop.id).gte('date', weekStart.toISOString().slice(0,10)).lte('date', weekEnd.toISOString().slice(0,10)).eq('status','confirmed')
+  if (role === 'barber') { qToday = qToday.eq('barber_id', myBarber.id); qWeek = qWeek.eq('barber_id', myBarber.id) }
+  const [{ count: todayCount }, { count: weekCount }] = await Promise.all([qToday, qWeek])
 
   const elT = document.getElementById('statToday')
   const elW = document.getElementById('statWeek')
@@ -235,11 +246,13 @@ async function loadStats() {
 }
 
 async function loadBookings(date) {
-  const { data: bookings } = await db.from('bookings')
+  let q = db.from('bookings')
     .select('*, barbers(name), services(name, duration_minutes)')
     .eq('barbershop_id', shop.id)
     .eq('date', date)
     .order('start_time')
+  if (role === 'barber') q = q.eq('barber_id', myBarber.id)
+  const { data: bookings } = await q
 
   const container = document.getElementById('bookingsList')
   if (!container) return
@@ -395,11 +408,26 @@ function renderBarbersList() {
       <div class="barber-avatar">${b.photo_url ? `<img src="${b.photo_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : '💈'}</div>
       <div class="service-body">
         <div class="service-name">${b.name}</div>
-        <div class="service-detail">${b.active ? 'Ativo' : 'Inativo'}</div>
+        <div class="service-detail">${b.email ? '🔓 Acesso: ' + b.email : 'Sem acesso ao painel'}</div>
       </div>
+      ${b.email ? '' : `<button class="action-btn" onclick="openAccessModal('${b.id}')">🔐 Criar acesso</button>`}
       <button class="action-btn" onclick="openHoursModal('${b.id}')">🕐 Horários</button>
       <button class="action-btn cancel" onclick="deleteBarber('${b.id}')">Remover</button>
     </div>`).join('')
+}
+
+// Cliente auxiliar: cria a conta do barbeiro sem derrubar a sessão do dono
+const dbAux = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+
+async function createBarberAccount(email, pass) {
+  const { data, error } = await dbAux.auth.signUp({ email, password: pass })
+  if (error) {
+    if (error.message?.toLowerCase().includes('already') || error.message?.toLowerCase().includes('registered')) {
+      return { userId: null, err: 'Este e-mail já tem conta no sistema. Use outro e-mail.' }
+    }
+    return { userId: null, err: error.message }
+  }
+  return { userId: data.user?.id || null, err: null }
 }
 
 function openBarberModal() {
@@ -413,23 +441,113 @@ function openBarberModal() {
         <label class="form-label">Nome</label>
         <input class="form-input" id="bName" type="text" placeholder="Ex: João">
       </div>
+      <div class="form-group">
+        <label class="form-label">E-mail do barbeiro (para ele acessar a agenda dele)</label>
+        <input class="form-input" id="bEmail" type="email" placeholder="joao@email.com (opcional)">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Senha inicial</label>
+        <input class="form-input" id="bPass" type="text" placeholder="Mínimo 6 caracteres — passe a ele depois">
+        <div class="form-hint">Ele entra em ${window.location.origin}/painel/ com esse e-mail e senha, e vê só a agenda dele.</div>
+      </div>
+      <div id="bErr" style="display:none;color:#f87171;font-size:13px;margin-bottom:10px;"></div>
       <div class="modal-actions">
         <button class="btn-modal-cancel" onclick="closeModal('barberModal')">Cancelar</button>
-        <button class="btn-modal-save" onclick="saveBarber()">Salvar</button>
+        <button class="btn-modal-save" id="bSave" onclick="saveBarber()">Salvar</button>
       </div>
     </div>`
   document.body.appendChild(overlay)
 }
 
 async function saveBarber() {
-  const name = document.getElementById('bName').value.trim()
+  const name  = document.getElementById('bName').value.trim()
+  const email = document.getElementById('bEmail').value.trim().toLowerCase()
+  const pass  = document.getElementById('bPass').value
+  const errEl = document.getElementById('bErr')
+  errEl.style.display = 'none'
   if (!name) return
-  const { data } = await db.from('barbers').insert({ barbershop_id: shop.id, name }).select().single()
+  if (email && pass.length < 6) {
+    errEl.textContent = 'Para dar acesso, a senha inicial precisa de pelo menos 6 caracteres.'
+    errEl.style.display = 'block'; return
+  }
+
+  const btn = document.getElementById('bSave')
+  btn.disabled = true; btn.textContent = 'Salvando…'
+
+  let userId = null
+  if (email) {
+    const acc = await createBarberAccount(email, pass)
+    if (acc.err) {
+      btn.disabled = false; btn.textContent = 'Salvar'
+      errEl.textContent = acc.err
+      errEl.style.display = 'block'; return
+    }
+    userId = acc.userId
+  }
+
+  const { data } = await db.from('barbers').insert({
+    barbershop_id: shop.id, name,
+    email: email || null, user_id: userId
+  }).select().single()
   if (data) barbers.push(data)
   closeModal('barberModal')
   renderBarbeiros()
   // Já abre a definição de dias e horários do barbeiro novo
   if (data) openHoursModal(data.id)
+}
+
+// Dar acesso a um barbeiro já cadastrado
+function openAccessModal(barberId) {
+  const b = barbers.find(x => x.id === barberId)
+  if (!b) return
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'accessModal'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">🔐 Criar acesso — ${b.name}</div>
+      <div class="form-group">
+        <label class="form-label">E-mail do barbeiro</label>
+        <input class="form-input" id="aEmail" type="email" placeholder="joao@email.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Senha inicial</label>
+        <input class="form-input" id="aPass" type="text" placeholder="Mínimo 6 caracteres">
+        <div class="form-hint">Ele entra em ${window.location.origin}/painel/ e vê só a agenda dele.</div>
+      </div>
+      <div id="aErr" style="display:none;color:#f87171;font-size:13px;margin-bottom:10px;"></div>
+      <div class="modal-actions">
+        <button class="btn-modal-cancel" onclick="closeModal('accessModal')">Cancelar</button>
+        <button class="btn-modal-save" id="aSave" onclick="saveAccess('${barberId}')">Criar acesso</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+}
+
+async function saveAccess(barberId) {
+  const email = document.getElementById('aEmail').value.trim().toLowerCase()
+  const pass  = document.getElementById('aPass').value
+  const errEl = document.getElementById('aErr')
+  errEl.style.display = 'none'
+  if (!email) { errEl.textContent = 'Informe o e-mail.'; errEl.style.display = 'block'; return }
+  if (pass.length < 6) { errEl.textContent = 'A senha precisa de pelo menos 6 caracteres.'; errEl.style.display = 'block'; return }
+
+  const btn = document.getElementById('aSave')
+  btn.disabled = true; btn.textContent = 'Criando…'
+
+  const acc = await createBarberAccount(email, pass)
+  if (acc.err) {
+    btn.disabled = false; btn.textContent = 'Criar acesso'
+    errEl.textContent = acc.err
+    errEl.style.display = 'block'; return
+  }
+
+  await db.from('barbers').update({ email, user_id: acc.userId }).eq('id', barberId)
+  const b = barbers.find(x => x.id === barberId)
+  if (b) { b.email = email; b.user_id = acc.userId }
+  closeModal('accessModal')
+  renderBarbeiros()
+  alert(`✅ Acesso criado!\n\nPainel: ${window.location.origin}/painel/\nE-mail: ${email}\nSenha: ${pass}\n\nPasse esses dados ao barbeiro.`)
 }
 
 // ── Dias e horários por barbeiro ──
