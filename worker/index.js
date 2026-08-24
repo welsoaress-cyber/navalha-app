@@ -56,7 +56,8 @@ async function createPix(request, env) {
   if (!shop) return json({ error: 'not_found' }, 404)
 
   const plan = PLANS[shop.plan] || PLANS.solo
-  const amount = plan.monthly + plan.setup
+  // TESTE: valor fixo de R$ 1,00 — restaurar para (plan.monthly + plan.setup) depois do teste
+  const amount = 1
   const origin = new URL(request.url).origin
 
   // QR expira em 30 minutos (horário expresso em UTC-3)
