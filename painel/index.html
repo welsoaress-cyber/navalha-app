@@ -397,6 +397,7 @@ function renderBarbersList() {
         <div class="service-name">${b.name}</div>
         <div class="service-detail">${b.active ? 'Ativo' : 'Inativo'}</div>
       </div>
+      <button class="action-btn" onclick="openHoursModal('${b.id}')">🕐 Horários</button>
       <button class="action-btn cancel" onclick="deleteBarber('${b.id}')">Remover</button>
     </div>`).join('')
 }
@@ -427,6 +428,97 @@ async function saveBarber() {
   if (data) barbers.push(data)
   closeModal('barberModal')
   renderBarbeiros()
+  // Já abre a definição de dias e horários do barbeiro novo
+  if (data) openHoursModal(data.id)
+}
+
+// ── Dias e horários por barbeiro ──
+function timeOptions(selected) {
+  let out = ''
+  for (let h = 6; h <= 23; h++) {
+    for (const m of ['00','30']) {
+      if (h === 23 && m === '30') continue
+      const t = String(h).padStart(2,'0') + ':' + m
+      out += `<option value="${t}" ${t === selected ? 'selected' : ''}>${t}</option>`
+    }
+  }
+  return out
+}
+
+async function openHoursModal(barberId) {
+  const b = barbers.find(x => x.id === barberId)
+  if (!b) return
+  const { data: rows } = await db.from('availability').select('*').eq('barber_id', barberId)
+  const byDay = {}
+  ;(rows || []).forEach(r => { byDay[r.day_of_week] = r })
+
+  const hasAny = (rows || []).length > 0
+  const dayRows = DIAS_FULL.map((nome, d) => {
+    const r = byDay[d]
+    const on = r ? true : (!hasAny && d >= 1 && d <= 6) // padrão: seg a sáb
+    const start = r ? String(r.start_time).slice(0,5) : '09:00'
+    const end   = r ? String(r.end_time).slice(0,5)   : '19:00'
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border);">
+        <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;font-size:14px;">
+          <input type="checkbox" id="hd-${d}" ${on ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--primary);">
+          ${nome}
+        </label>
+        <select class="form-select" id="hs-${d}" style="width:auto;padding:8px 10px;">${timeOptions(start)}</select>
+        <span style="color:var(--ink-3);font-size:13px;">às</span>
+        <select class="form-select" id="he-${d}" style="width:auto;padding:8px 10px;">${timeOptions(end)}</select>
+      </div>`
+  }).join('')
+
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'hoursModal'
+  overlay.innerHTML = `
+    <div class="modal" style="max-height:90dvh;overflow-y:auto;">
+      <div class="modal-title">🕐 Horários — ${b.name}</div>
+      <p style="font-size:13px;color:var(--ink-2);margin-bottom:12px;">Marque os dias que ${b.name} atende e o horário de cada dia.</p>
+      ${dayRows}
+      <div id="hoursErr" style="display:none;color:#f87171;font-size:13px;margin-top:10px;"></div>
+      <div class="modal-actions">
+        <button class="btn-modal-cancel" onclick="closeModal('hoursModal')">Cancelar</button>
+        <button class="btn-modal-save" id="hoursSave" onclick="saveHours('${barberId}')">Salvar horários</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+}
+
+async function saveHours(barberId) {
+  const rows = []
+  const errEl = document.getElementById('hoursErr')
+  errEl.style.display = 'none'
+  for (let d = 0; d < 7; d++) {
+    if (!document.getElementById('hd-' + d).checked) continue
+    const start = document.getElementById('hs-' + d).value
+    const end   = document.getElementById('he-' + d).value
+    if (end <= start) {
+      errEl.textContent = `${DIAS_FULL[d]}: o horário de fechar precisa ser depois do de abrir.`
+      errEl.style.display = 'block'; return
+    }
+    rows.push({ barber_id: barberId, day_of_week: d, start_time: start, end_time: end })
+  }
+  const btn = document.getElementById('hoursSave')
+  btn.disabled = true; btn.textContent = 'Salvando…'
+
+  const { error: delErr } = await db.from('availability').delete().eq('barber_id', barberId)
+  if (delErr) {
+    btn.disabled = false; btn.textContent = 'Salvar horários'
+    errEl.textContent = 'Erro ao salvar: ' + delErr.message
+    errEl.style.display = 'block'; return
+  }
+  if (rows.length) {
+    const { error: insErr } = await db.from('availability').insert(rows)
+    if (insErr) {
+      btn.disabled = false; btn.textContent = 'Salvar horários'
+      errEl.textContent = 'Erro ao salvar: ' + insErr.message
+      errEl.style.display = 'block'; return
+    }
+  }
+  closeModal('hoursModal')
 }
 
 async function deleteBarber(id) {
