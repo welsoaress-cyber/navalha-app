@@ -142,9 +142,9 @@ async function sendWelcome(request, env) {
   const shop = Array.isArray(rows) ? rows[0] : null
   if (!shop || !shop.owner_email) return json({ sent: false, reason: 'not_found' })
 
-  const origin  = new URL(request.url).origin
-  const appLink = origin + '/?barbearia=' + shop.slug
-  const panel   = origin + '/painel/'
+  const appLink = 'https://' + shop.slug + '.navalhanobigode.com.br'
+  const panel   = appLink + '/painel/'
+  const btn = (href, label) => `<a href="${href}" style="display:inline-block;background:#D4A843;color:#0F172A;font-weight:bold;font-size:14px;text-decoration:none;padding:12px 22px;border-radius:10px;">${label}</a>`
 
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;background:#0F172A;padding:32px 16px;">
@@ -154,22 +154,28 @@ async function sendWelcome(request, env) {
       <h2 style="font-size:18px;margin:0 0 16px;">Bem-vindo, ${shop.name}! 🎉</h2>
       <p style="font-size:14px;line-height:1.6;color:#CBD5E1;">Seu cadastro foi concluído. Guarde este e-mail — aqui está tudo o que você precisa para começar:</p>
 
-      <div style="background:#0F172A;border-radius:12px;padding:18px;margin:18px 0;">
-        <p style="margin:0 0 4px;font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:1px;">Link de agendamento (envie aos seus clientes)</p>
-        <p style="margin:0 0 14px;"><a href="${appLink}" style="color:#D4A843;font-size:14px;word-break:break-all;">${appLink}</a></p>
-        <p style="margin:0 0 4px;font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:1px;">Seu painel (agenda e configurações)</p>
-        <p style="margin:0 0 14px;"><a href="${panel}" style="color:#D4A843;font-size:14px;">${panel}</a></p>
-        <p style="margin:0 0 4px;font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:1px;">Login</p>
+      <div style="background:#0F172A;border-radius:12px;padding:20px;margin:18px 0;">
+        <p style="margin:0 0 6px;font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:1px;">Seu app de agendamento</p>
+        <p style="margin:0 0 8px;font-size:16px;font-weight:bold;color:#F8FAFC;">${shop.slug}.navalhanobigode.com.br</p>
+        <p style="margin:0 0 20px;">${btn(appLink, '📲 Abrir meu app')}</p>
+        <p style="margin:0 0 6px;font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:1px;">Seu painel (agenda e configurações)</p>
+        <p style="margin:0 0 20px;">${btn(panel, '🗓 Abrir meu painel')}</p>
+        <p style="margin:0 0 6px;font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:1px;">Login</p>
         <p style="margin:0;font-size:14px;color:#F8FAFC;">${shop.owner_email}<br><span style="color:#94A3B8;font-size:12px;">Senha: a que você criou no cadastro</span></p>
       </div>
 
       <h3 style="font-size:15px;margin:22px 0 10px;color:#D4A843;">Primeiros passos</h3>
       <ol style="font-size:14px;line-height:1.9;color:#CBD5E1;padding-left:20px;margin:0;">
-        <li><strong>Salve o app no celular:</strong> abra o link de agendamento e use "Adicionar à tela inicial" no navegador.</li>
-        <li><strong>Divulgue:</strong> mande o link de agendamento no WhatsApp dos seus clientes e coloque na bio do Instagram.</li>
+        <li><strong>Instale o app no celular:</strong> abra o link do seu app e toque em "Adicionar à tela inicial" — ele vira um ícone, como qualquer aplicativo.</li>
+        <li><strong>Divulgue:</strong> mande o link no WhatsApp dos seus clientes e coloque na bio do Instagram.</li>
         <li><strong>Confira seus horários:</strong> no painel, ajuste os dias e horários de atendimento quando precisar.</li>
         <li><strong>Acompanhe a agenda:</strong> os agendamentos aparecem no painel em tempo real.</li>
       </ol>
+
+      <div style="background:rgba(212,168,67,0.1);border:1px solid rgba(212,168,67,0.3);border-radius:12px;padding:16px;margin-top:22px;">
+        <p style="margin:0;font-size:14px;line-height:1.6;color:#F8FAFC;">💳 <strong>Seus cartões estão a caminho!</strong><br>
+        <span style="color:#CBD5E1;font-size:13px;">Você vai receber cartões com o QR Code da sua barbearia para distribuir aos clientes. A primeira remessa é por nossa conta — remessas adicionais são cobradas à parte.</span></p>
+      </div>
 
       <p style="font-size:13px;color:#94A3B8;margin-top:24px;">Dúvidas? Fale com a gente: <a href="https://wa.me/5511954490001" style="color:#D4A843;">WhatsApp</a></p>
     </div>

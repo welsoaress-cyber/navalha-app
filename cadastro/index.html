@@ -292,6 +292,10 @@
         ✅ <strong>Seu acesso já está liberado.</strong><br>
         Assim que o pagamento for confirmado, seu app fica ativo para os clientes agendarem.
       </div>
+      <div class="alert-box" style="background:rgba(212,168,67,0.08);border-color:rgba(212,168,67,0.25);">
+        📧 <strong>Enviamos um e-mail</strong> com seus acessos, o link do app e os primeiros passos — guarde ele.<br><br>
+        💳 <strong>Seus cartões estão a caminho:</strong> você vai receber cartões com o QR Code da sua barbearia para distribuir aos clientes. A primeira remessa é por nossa conta — remessas adicionais são cobradas à parte.
+      </div>
     </div>
 
   </div>
@@ -537,7 +541,7 @@ async function createAccount() {
           window.location.href = '/painel/'
           return
         }
-        const appLink2 = `${window.location.origin}/?barbearia=${existing.slug}`
+        const appLink2 = `https://${existing.slug}.navalhanobigode.com.br`
         document.getElementById('accAppLink').textContent = appLink2
         document.getElementById('accEmail').textContent = email
         window._appLink = appLink2
@@ -598,7 +602,7 @@ async function createAccount() {
   if (availErr) { showErr(btn, 'Erro ao salvar horários: ' + availErr.message); return }
 
   // ✅ Sucesso — dados de acesso na tela final
-  const appLink = `${window.location.origin}/?barbearia=${slug}`
+  const appLink = `https://${slug}.navalhanobigode.com.br`
   document.getElementById('accAppLink').textContent = appLink
   document.getElementById('accEmail').textContent = email
   window._appLink = appLink

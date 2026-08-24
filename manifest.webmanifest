@@ -1,0 +1,12 @@
+{
+  "name": "Navalha no Bigode",
+  "short_name": "Navalha",
+  "description": "Agendamento online para barbearias",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0F172A",
+  "theme_color": "#0F172A",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

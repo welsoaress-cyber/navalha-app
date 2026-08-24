@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Painel — Navalha no Bigode</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0F172A">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@700;800&display=swap">
 <style>
@@ -107,6 +110,18 @@
   .form-label { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; display: block; }
   .form-input { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1.5px solid var(--border); font-size: 15px; font-family: inherit; background: var(--bg); color: var(--ink); outline: none; }
   .form-select { padding: 12px 14px; border-radius: 10px; border: 1.5px solid var(--border); font-size: 14px; font-family: inherit; background: var(--bg); color: var(--ink); outline: none; }
+  .week-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 14px 12px; margin-bottom: 16px; }
+  .week-title { font-size: 12px; font-weight: 700; color: var(--ink-3, #64748b); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; padding-left: 4px; }
+  .week-row { display: flex; gap: 6px; }
+  .wk-day { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px; border-radius: 10px; cursor: pointer; border: 1.5px solid transparent; transition: all 0.15s; }
+  .wk-day:hover { background: rgba(212,168,67,0.06); }
+  .wk-day.active { border-color: var(--primary); background: rgba(212,168,67,0.1); }
+  .wk-count { font-size: 13px; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .wk-bar { width: 100%; max-width: 26px; height: 44px; background: rgba(148,163,184,0.12); border-radius: 6px; display: flex; align-items: flex-end; overflow: hidden; }
+  .wk-bar > div { width: 100%; background: var(--primary); border-radius: 6px 6px 0 0; transition: height 0.3s; }
+  .wk-label { font-size: 11px; font-weight: 700; color: var(--ink-2); }
+  .wk-date { font-size: 10px; color: var(--ink-3, #64748b); font-variant-numeric: tabular-nums; }
+  .booking-service { color: var(--primary); font-weight: 600; }
   .form-hint { font-size: 12px; color: var(--ink-3, #64748b); margin-top: 4px; }
   .form-input:focus { border-color: var(--primary); }
   .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
@@ -223,6 +238,10 @@ async function renderAgenda() {
       <div class="stat-card"><div class="stat-label">Semana</div><div class="stat-value" id="statWeek">—</div><div class="stat-sub">agendamentos</div></div>
       <div class="stat-card"><div class="stat-label">Plano</div><div class="stat-value" style="font-size:18px;text-transform:capitalize;" id="statPlan">${shop.plan}</div><div class="stat-sub">${shop.max_barbers} barbeiro${shop.max_barbers > 1 ? 's' : ''}</div></div>
     </div>
+    <div class="week-card">
+      <div class="week-title">Sua semana</div>
+      <div class="week-row" id="weekRow"><div class="loading-overlay"><div class="spinner"></div></div></div>
+    </div>
     <div class="date-row">
       <span class="date-label">Agenda de:</span>
       <input class="date-input" type="date" id="dateInput" value="${selectedDate}" onchange="changeDate(this.value)">
@@ -230,7 +249,40 @@ async function renderAgenda() {
     <div id="bookingsList"><div class="loading-overlay"><div class="spinner"></div> Carregando agenda…</div></div>`
 
   loadBookings(selectedDate)
+  loadWeekOverview()
   loadStats()
+}
+
+// Visão semanal: gráfico de barras clicável (Dom a Sáb)
+async function loadWeekOverview() {
+  const el = document.getElementById('weekRow')
+  if (!el) return
+  const base = new Date(selectedDate + 'T12:00:00')
+  const ws = new Date(base); ws.setDate(ws.getDate() - ws.getDay())
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(ws); d.setDate(ws.getDate() + i)
+    return d.toISOString().slice(0, 10)
+  })
+
+  let q = db.from('bookings').select('date')
+    .eq('barbershop_id', shop.id)
+    .gte('date', days[0]).lte('date', days[6])
+    .neq('status', 'cancelled')
+  if (role === 'barber') q = q.eq('barber_id', myBarber.id)
+  const { data } = await q
+
+  const counts = {}
+  days.forEach(d => counts[d] = 0)
+  ;(data || []).forEach(b => { if (counts[b.date] !== undefined) counts[b.date]++ })
+  const max = Math.max(1, ...Object.values(counts))
+
+  el.innerHTML = days.map((d, i) => `
+    <div class="wk-day ${d === selectedDate ? 'active' : ''}" onclick="changeDate('${d}')">
+      <div class="wk-count">${counts[d]}</div>
+      <div class="wk-bar"><div style="height:${Math.max(4, Math.round(counts[d] / max * 100))}%"></div></div>
+      <div class="wk-label">${DIAS[i]}</div>
+      <div class="wk-date">${d.slice(8,10)}/${d.slice(5,7)}</div>
+    </div>`).join('')
 }
 
 async function loadStats() {
@@ -284,7 +336,8 @@ async function loadBookings(date) {
       <div class="booking-time">${bk.start_time.slice(0,5)}</div>
       <div class="booking-body">
         <div class="booking-name">${bk.client_name}</div>
-        <div class="booking-detail">${bk.services?.name || '—'} · ${bk.client_phone}</div>
+        <div class="booking-detail"><span class="booking-service">✂️ ${bk.services?.name || 'Serviço'}${bk.services?.duration_minutes ? ' · ' + bk.services.duration_minutes + 'min' : ''}</span></div>
+        <div class="booking-detail">📞 ${bk.client_phone}</div>
       </div>
       <div class="booking-barber">${bk.barbers?.name || '—'}</div>
       <span class="status-pill status-${bk.status}">${statusLabel(bk.status)}</span>
@@ -304,7 +357,10 @@ function statusLabel(s) {
 
 function changeDate(d) {
   selectedDate = d
+  const inp = document.getElementById('dateInput')
+  if (inp) inp.value = d
   loadBookings(d)
+  loadWeekOverview()
 }
 
 async function updateStatus(id, status) {
