@@ -61,8 +61,8 @@ async function createPix(request, env) {
   const amount = 1
   const origin = new URL(request.url).origin
 
-  // QR expira em 5 minutos (horário expresso em UTC-3)
-  const expMs = Date.now() + 5 * 60 * 1000
+  // QR expira em 30 minutos (horário expresso em UTC-3)
+  const expMs = Date.now() + 30 * 60 * 1000
   const expStr = new Date(expMs - 3 * 3600 * 1000).toISOString().replace('Z', '-03:00')
 
   const pr = await mp(env, '/v1/payments', {
@@ -88,7 +88,7 @@ async function createPix(request, env) {
     description: `Plano ${plan.name} — 1º mês R$ ${plan.monthly} + Kit R$ ${plan.setup}`,
     qr_code: tx && tx.qr_code,
     qr_base64: tx && tx.qr_code_base64,
-    expires_in: 300,
+    expires_in: 1800,
   })
 }
 
