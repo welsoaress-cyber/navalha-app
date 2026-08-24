@@ -185,6 +185,12 @@ async function init() {
     document.querySelectorAll('.nav-tab').forEach((el, i) => { if (i > 0) el.style.display = 'none' })
   }
 
+  // Plano Solo: a aba vira "Meus horários" (não existe equipe)
+  if (role === 'owner' && shop.max_barbers === 1) {
+    const tabs = document.querySelectorAll('.nav-tab')
+    if (tabs[2]) tabs[2].textContent = 'Meus horários'
+  }
+
   const [{ data: b }, { data: s }] = await Promise.all([
     db.from('barbers').select('*').eq('barbershop_id', shop.id),
     db.from('services').select('*').eq('barbershop_id', shop.id)
@@ -384,9 +390,15 @@ async function deleteService(id) {
 }
 
 function renderBarbeiros() {
+  const solo = shop.max_barbers === 1
   const maxOk = barbers.filter(b => b.active).length < shop.max_barbers
   const content = document.getElementById('content')
-  content.innerHTML = `
+  content.innerHTML = solo ? `
+    <div class="section-header">
+      <div class="section-title">Meus horários</div>
+    </div>
+    <p style="font-size:13px;color:var(--ink-3);margin:-8px 0 16px;">Defina os dias e horários em que você atende.</p>
+    <div id="barbersList"></div>` : `
     <div class="section-header">
       <div class="section-title">Barbeiros <span style="font-size:14px;font-weight:400;color:var(--ink-3)">${barbers.filter(b=>b.active).length}/${shop.max_barbers} no plano ${shop.plan}</span></div>
       ${maxOk ? `<button class="btn-add" onclick="openBarberModal()">+ Adicionar</button>` : `<span style="font-size:13px;color:var(--ink-3)">Limite do plano atingido</span>`}
@@ -403,16 +415,17 @@ function renderBarbersList() {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">💈</div><div class="empty-title">Nenhum barbeiro</div><p>Adicione os barbeiros da sua equipe.</p></div>'
     return
   }
+  const solo = shop.max_barbers === 1
   el.innerHTML = barbers.map(b => `
     <div class="barber-card">
       <div class="barber-avatar">${b.photo_url ? `<img src="${b.photo_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : '💈'}</div>
       <div class="service-body">
         <div class="service-name">${b.name}</div>
-        <div class="service-detail">${b.email ? '🔓 Acesso: ' + b.email : 'Sem acesso ao painel'}</div>
+        <div class="service-detail">${solo ? 'Você' : (b.email ? '🔓 Acesso: ' + b.email : 'Sem acesso ao painel')}</div>
       </div>
-      ${b.email ? '' : `<button class="action-btn" onclick="openAccessModal('${b.id}')">🔐 Criar acesso</button>`}
+      ${solo || b.email ? '' : `<button class="action-btn" onclick="openAccessModal('${b.id}')">🔐 Criar acesso</button>`}
       <button class="action-btn" onclick="openHoursModal('${b.id}')">🕐 Horários</button>
-      <button class="action-btn cancel" onclick="deleteBarber('${b.id}')">Remover</button>
+      ${solo ? '' : `<button class="action-btn cancel" onclick="deleteBarber('${b.id}')">Remover</button>`}
     </div>`).join('')
 }
 

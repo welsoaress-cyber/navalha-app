@@ -265,25 +265,11 @@
         </div>
       </div>
 
-      <!-- Pagamento manual (reserva) -->
-      <div id="payManual">
-      <div class="pix-box">
-        <div class="pix-amount" id="pixAmount">R$ 149</div>
-        <div class="pix-desc" id="pixDesc"></div>
-        <div class="pix-key-label">Chave Pix</div>
-        <div class="pix-key-val" id="pixKeyVal">—</div>
-        <button class="btn-copy" id="btnCopy" onclick="copyPix()">📋 Copiar chave Pix</button>
-      </div>
-      <ul class="pix-steps">
-        <li><strong>1</strong>Abra o app do seu banco e escolha "Pix"</li>
-        <li><strong>2</strong>Cole a chave Pix acima e confirme o valor</li>
-        <li><strong>3</strong>Salve o comprovante</li>
-        <li><strong>4</strong>Clique no botão abaixo e mande pelo WhatsApp</li>
-      </ul>
-      <button class="btn-whats" id="btnWhats">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-        Enviar comprovante pelo WhatsApp
-      </button>
+      <!-- Gerando QR / erro -->
+      <div id="payLoading">
+        <div class="pix-box">
+          <div style="font-size:15px;color:#94A3B8;padding:20px 0;"><span class="spinner"></span> Gerando seu QR Code Pix…</div>
+        </div>
       </div>
       <div class="access-box">
         <div class="access-title">🔑 Seus dados de acesso</div>
@@ -360,9 +346,6 @@ document.getElementById('planCard').innerHTML = `
   </div>`
 document.getElementById('planFeatures').innerHTML = plan.features.map(f => `<li>${f}</li>`).join('')
 
-document.getElementById('pixAmount').textContent = `R$ ${plan.monthly + plan.setup}`
-document.getElementById('pixDesc').textContent   = `Plano ${plan.name} — 1º mês R$ ${plan.monthly} + Kit R$ ${plan.setup}`
-document.getElementById('pixKeyVal').textContent  = PIX_KEY
 
 // ── Gera horários dropdown ──
 function timeOptions(selected) {
@@ -554,10 +537,6 @@ async function createAccount() {
           window.location.href = '/painel/'
           return
         }
-        const exPlan  = PLANS[existing.plan] || plan
-        const exTotal = exPlan.monthly + exPlan.setup
-        const waMsg2  = encodeURIComponent(`Olá! Estou retomando o cadastro da barbearia *${existing.name}* no Navalha no Bigode.\n\nPlano: *${exPlan.name}*\nValor: *R$ ${exTotal}*`)
-        document.getElementById('btnWhats').onclick = () => window.open(`https://wa.me/${WHATSAPP}?text=${waMsg2}`)
         const appLink2 = `${window.location.origin}/?barbearia=${existing.slug}`
         document.getElementById('accAppLink').textContent = appLink2
         document.getElementById('accEmail').textContent = email
@@ -618,12 +597,7 @@ async function createAccount() {
   const { error: availErr } = await db.from('availability').insert(availRows)
   if (availErr) { showErr(btn, 'Erro ao salvar horários: ' + availErr.message); return }
 
-  // ✅ Sucesso
-  const total  = plan.monthly + plan.setup
-  const waMsg  = encodeURIComponent(`Olá! Acabei de criar minha barbearia *${shopName}* no Navalha no Bigode.\n\nPlano: *${plan.name}*\nValor pago: *R$ ${total}*\n\nSegue o comprovante do Pix! 🧾`)
-  document.getElementById('btnWhats').onclick = () => window.open(`https://wa.me/${WHATSAPP}?text=${waMsg}`)
-
-  // Dados de acesso na tela final
+  // ✅ Sucesso — dados de acesso na tela final
   const appLink = `${window.location.origin}/?barbearia=${slug}`
   document.getElementById('accAppLink').textContent = appLink
   document.getElementById('accEmail').textContent = email
@@ -638,27 +612,40 @@ let _pollTimer = null, _cdTimer = null
 
 async function startPix(shopId) {
   window._shopId = shopId
+  const loadEl = document.getElementById('payLoading')
+  loadEl.style.display = 'block'
+  document.getElementById('payAuto').style.display = 'none'
+  loadEl.querySelector('.pix-box').innerHTML = '<div style="font-size:15px;color:#94A3B8;padding:20px 0;"><span class="spinner"></span> Gerando seu QR Code Pix…</div>'
   try {
     const r = await fetch('/api/pix', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ barbershop_id: shopId })
     })
-    if (!r.ok) return // configuração ausente → mantém o fluxo manual
-    const d = await r.json()
-    if (!d.qr_base64 || !d.qr_code) return
+    const d = await r.json().catch(() => ({}))
+    if (!r.ok || !d.qr_base64 || !d.qr_code) { pixFail(); return }
     document.getElementById('pixQrImg').src = 'data:image/png;base64,' + d.qr_base64
     document.getElementById('pixAmountAuto').textContent = 'R$ ' + d.amount
     document.getElementById('pixDescAuto').textContent = d.description
     window._pixCode = d.qr_code
-    document.getElementById('payManual').style.display = 'none'
+    loadEl.style.display = 'none'
     document.getElementById('payAuto').style.display = 'block'
     const st = document.getElementById('payStatus')
     st.innerHTML = '⏳ Aguardando pagamento… assim que o Pix cair, sua barbearia é ativada automaticamente.'
     st.style.color = '#94A3B8'
     startCountdown(d.expires_in || 300)
     pollPix(d.payment_id)
-  } catch (e) { /* mantém o fluxo manual */ }
+  } catch (e) { pixFail() }
+}
+
+function pixFail() {
+  const loadEl = document.getElementById('payLoading')
+  loadEl.style.display = 'block'
+  document.getElementById('payAuto').style.display = 'none'
+  loadEl.querySelector('.pix-box').innerHTML = `
+    <div style="font-size:14px;color:#94A3B8;padding:10px 0;">Não foi possível gerar o QR Code agora.</div>
+    <button class="btn-copy" onclick="startPix(window._shopId)">🔄 Tentar novamente</button>
+    <div style="font-size:12px;color:#64748B;margin-top:12px;">Se o problema continuar, <a href="https://wa.me/${WHATSAPP}" target="_blank" style="color:#D4A843;">fale com a gente no WhatsApp</a>. Seu cadastro está salvo.</div>`
 }
 
 function startCountdown(secs) {
@@ -727,15 +714,6 @@ function showErr(btn, msg) {
   btn.disabled = false
   btn.textContent = 'Criar minha barbearia 🚀'
   if (msg) alert(msg)
-}
-
-function copyPix() {
-  navigator.clipboard.writeText(PIX_KEY).then(() => {
-    const btn = document.getElementById('btnCopy')
-    btn.textContent = '✓ Copiado!'
-    btn.classList.add('copied')
-    setTimeout(() => { btn.textContent = '📋 Copiar chave Pix'; btn.classList.remove('copied') }, 2500)
-  })
 }
 
 // Init
