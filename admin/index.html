@@ -235,6 +235,7 @@ function renderClients() {
       <span class="status-pill status-${c.status}">${statusLabel(c.status)}</span>
       <div class="client-actions">
         <a class="link-btn" href="/?barbearia=${c.slug}" target="_blank">Ver página ↗</a>
+        <a class="link-btn" href="/admin/cartao.html?slug=${c.slug}" target="_blank">💳 Cartão</a>
         ${c.status === 'active'
           ? `<button class="action-btn suspend" onclick="toggleStatus('${c.id}','suspended')">Suspender</button>`
           : `<button class="action-btn activate" onclick="toggleStatus('${c.id}','active')">Reativar</button>`
