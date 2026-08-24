@@ -17,7 +17,6 @@ export default {
       if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
       if (url.pathname === '/api/pix-status') return await pixStatus(url, env)
       if (url.pathname === '/api/mp-webhook') return await mpWebhook(request, url, env)
-      if (url.pathname === '/api/pix-debug') return await pixDebug(env)
     } catch (e) {
       return json({ error: 'internal', detail: String(e) }, 500)
     }
@@ -57,8 +56,7 @@ async function createPix(request, env) {
   if (!shop) return json({ error: 'not_found' }, 404)
 
   const plan = PLANS[shop.plan] || PLANS.solo
-  // TESTE: valor fixo de R$ 1,00 — restaurar para (plan.monthly + plan.setup) depois do teste
-  const amount = 1
+  const amount = plan.monthly + plan.setup
   const origin = new URL(request.url).origin
 
   // QR expira em 30 minutos (horário expresso em UTC-3)
@@ -126,26 +124,6 @@ async function activate(env, shopId) {
     headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
     body: JSON.stringify({ status: 'active' })
   })
-}
-
-// Diagnóstico temporário: lista as últimas tentativas de pagamento e o motivo exato do MP
-async function pixDebug(env) {
-  if (!env.MP_ACCESS_TOKEN) return json({ error: 'not_configured' }, 503)
-  const r = await mp(env, '/v1/payments/search?sort=date_created&criteria=desc&limit=5')
-  if (!r.ok) {
-    const e = await r.json().catch(() => ({}))
-    return json({ error: 'mp_error', http: r.status, detail: e.message || e.error || null }, 502)
-  }
-  const d = await r.json()
-  const items = (d.results || []).map(p => ({
-    id: p.id,
-    criado: p.date_created,
-    valor: p.transaction_amount,
-    status: p.status,
-    motivo: p.status_detail,
-    metodo: p.payment_method_id,
-  }))
-  return json({ pagamentos: items })
 }
 
 // E-mail de boas-vindas com orientações de uso (via Resend)
