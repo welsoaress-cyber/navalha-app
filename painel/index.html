@@ -326,7 +326,8 @@ async function renderAgenda() {
     <div class="date-row">
       <span class="date-label">Agenda de:</span>
       <input class="date-input" type="date" id="dateInput" value="${selectedDate}" onchange="changeDate(this.value)">
-      <button class="action-btn cancel" style="margin-left:auto;" onclick="closeDay()">🚫 Fechar este dia</button>
+      ${selectedDate === hojeBR() ? `<button class="action-btn" style="margin-left:auto;border-color:rgba(212,168,67,0.5);color:var(--gold);" onclick="libereiMaisCedo()">⚡ Liberei mais cedo</button>` : ''}
+      <button class="action-btn cancel" ${selectedDate === hojeBR() ? '' : 'style="margin-left:auto;"'} onclick="closeDay()">🚫 Fechar este dia</button>
     </div>
     <div id="bookingsList"><div class="loading-overlay"><div class="spinner"></div> Carregando agenda…</div></div>`
 
@@ -441,6 +442,43 @@ async function loadBookings(date) {
     `
     list.appendChild(el)
   })
+}
+
+// ⚡ Liberei mais cedo: oferece ao próximo cliente de hoje vir agora
+async function libereiMaisCedo() {
+  const { data: barbers } = await db.from('barbers').select('id,name')
+    .eq('barbershop_id', shop.id).eq('active', true)
+  if (!barbers || !barbers.length) { alert('Nenhum profissional ativo.'); return }
+  if (barbers.length === 1) { enviarFreeNow(barbers[0].id, barbers[0].name); return }
+  // Mais de um profissional: pergunta qual liberou
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'freeNowModal'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">⚡ Quem liberou mais cedo?</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${barbers.map(b => `<button class="btn-modal-save" onclick="document.getElementById('freeNowModal').remove(); enviarFreeNow('${b.id}', '${b.name.replace(/'/g, '')}')">${b.name}</button>`).join('')}
+      </div>
+      <div class="modal-actions" style="margin-top:12px;">
+        <button class="btn-modal-cancel" style="flex:1;" onclick="document.getElementById('freeNowModal').remove()">Cancelar</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+}
+
+async function enviarFreeNow(barberId, barberName) {
+  try {
+    const r = await fetch('/api/free-now', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ barbershop_id: shop.id, barber_id: barberId })
+    })
+    const d = await r.json()
+    if (d.ok) alert(`⚡ Oferta enviada!\n\n${d.client} (horário das ${d.at}) recebeu no WhatsApp o convite pra vir agora. Se recusar ou não responder, o robô tenta o próximo da fila.`)
+    else if (d.already) alert(`Já tem uma oferta em andamento pra ${d.client}. Aguarda a resposta dele.`)
+    else if (d.none) alert(`${barberName ? barberName + ' não tem' : 'Não tem'} mais clientes confirmados hoje pra antecipar.`)
+    else alert('Não consegui enviar a oferta. Tenta de novo.')
+  } catch (e) { alert('Falha de conexão. Tenta de novo.') }
 }
 
 // Cliente atrasado: robô pergunta no WhatsApp se ele está a caminho

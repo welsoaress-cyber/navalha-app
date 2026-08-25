@@ -25,6 +25,7 @@ export default {
       if (url.pathname === '/api/reschedule' && request.method === 'POST') return await reschedule(request, env)
       if (url.pathname.startsWith('/c/')) return await cancelPage(url.pathname.slice(3).split('/')[0], env)
       if (url.pathname === '/api/cancel-act' && request.method === 'POST') return await cancelAct(request, env)
+      if (url.pathname === '/api/free-now' && request.method === 'POST') return await freeNow(request, env)
       if (url.pathname === '/api/cards-pix' && request.method === 'POST') return await cardsPix(request, env)
       if (url.pathname === '/pagar') return await payPage(request, env)
       if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
@@ -783,7 +784,20 @@ async function notify(request, env) {
       body: JSON.stringify({ late_check_sent_at: new Date().toISOString(), late_reply: null })
     })
   }
+  if (body.type === 'booking_new') {
+    // Entrou gente na fila: ofertas com prazo estendido voltam pro prazo padrão de 5 min
+    await encurtaOfertas(env, bk.barber_id, bk.date)
+  }
   return json({ sent })
+}
+
+// Ofertas estendidas (sem fila) encurtam quando aparece um novo agendamento atrás
+async function encurtaOfertas(env, barberId, date) {
+  const lim = new Date(Date.now() + 5 * 60 * 1000).toISOString()
+  await sb(env, `slot_offers?barber_id=eq.${barberId}&date=eq.${date}&status=eq.pending&expires_at=gt.${encodeURIComponent(lim)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ expires_at: lim })
+  })
 }
 
 // ── Auto-cancelamento pelo cliente: link /c/<id> na confirmação e no lembrete ──
@@ -860,6 +874,9 @@ async function reschedule(request, env) {
     barbershop_id: velho.barbershop_id, barber_id: velho.barber_id,
     date: velho.date, slot_start: velho.start_time, slot_end: velho.end_time
   }, velho.start_time)
+
+  // O novo horário também conta como "gente na fila" pras ofertas estendidas
+  await encurtaOfertas(env, novo.barber_id, novo.date)
 
   const shop = novo.barbershops || {}
   const link = `${shop.slug}.navalhanobigode.com.br`
@@ -997,6 +1014,15 @@ async function sb(env, path, init = {}) {
 }
 
 // Oferece a janela liberada ao próximo da fila (a partir de afterTime)
+// Prazo estendido: quando não há fila atrás, a oferta vale até 30 min antes da vaga
+function prazoOferta(win, temFila) {
+  const CINCO = 5 * 60 * 1000
+  if (temFila) return CINCO
+  const slotUtc = Date.parse(`${win.date}T${String(win.slot_start).slice(0, 8)}Z`) + 3 * 3600 * 1000
+  const restante = slotUtc - 30 * 60 * 1000 - Date.now()
+  return Math.max(CINCO, restante)
+}
+
 async function offerNext(env, win, afterTime) {
   const candidatos = await sb(env,
     `bookings?barber_id=eq.${win.barber_id}&date=eq.${win.date}&status=eq.confirmed` +
@@ -1004,9 +1030,14 @@ async function offerNext(env, win, afterTime) {
   if (!Array.isArray(candidatos)) return
 
   const freedLen = minutos(win.slot_end) - minutos(win.slot_start)
-  for (const cand of candidatos) {
+  for (let i = 0; i < candidatos.length; i++) {
+    const cand = candidatos[i]
     const dur = minutos(cand.end_time) - minutos(cand.start_time)
     if (dur > freedLen) continue // serviço não cabe na janela
+
+    // Tem mais alguém na fila (depois deste) cujo serviço também caberia?
+    const temFila = candidatos.slice(i + 1).some(c => (minutos(c.end_time) - minutos(c.start_time)) <= freedLen)
+    const validadeMs = prazoOferta(win, temFila)
 
     const code = Array.from(crypto.getRandomValues(new Uint8Array(6)))
       .map(b => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[b % 31]).join('')
@@ -1018,23 +1049,77 @@ async function offerNext(env, win, afterTime) {
         booking_id: cand.id,
         code,
         status: 'pending',
-        expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString()
+        expires_at: new Date(Date.now() + validadeMs).toISOString()
       })
     }) || []
     if (!offer) return
 
     const shop = cand.barbershops || {}
     const link = `${shop.slug}.navalhanobigode.com.br/o/${code}`
+    const validadeTxt = temFila
+      ? '⏱ Oferta válida por 5 minutos.'
+      : `⏱ Oferta válida até *${new Date(Date.now() + validadeMs - 3 * 3600 * 1000).toISOString().slice(11, 16)}* (você é o próximo da fila, sem pressa).`
     const text =
       `💈 *${shop.name}*\n\n` +
       `Olá, ${cand.client_name}! Abriu um horário mais cedo:\n` +
       `🗓 Dia ${fmtData(win.date)} às 🕐 *${String(win.slot_start).slice(0,5)}h*\n` +
       `Você está marcado às ${String(cand.start_time).slice(0,5)}h\n\n` +
       `Quer antecipar? Toque e escolha:\n${link}\n\n` +
-      `⏱ Oferta válida por 5 minutos.`
+      validadeTxt
     await evoSend(env, cand.client_phone, text)
     return // uma oferta por vez; o resto acontece via resposta ou expiração
   }
+}
+
+// ── "⚡ Liberei mais cedo": barbeiro terminou rápido e chama o próximo da fila ──
+async function freeNow(request, env) {
+  if (!env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
+  let body
+  try { body = await request.json() } catch { return json({ error: 'bad_request' }, 400) }
+  const re = /^[a-f0-9-]+$/
+  if (!re.test(body.barbershop_id || '') || !re.test(body.barber_id || '')) return json({ error: 'bad_request' }, 400)
+
+  const hoje = todayBR()
+  const nowBR = new Date(Date.now() - 3 * 3600 * 1000)
+  const nowStr = `${String(nowBR.getUTCHours()).padStart(2, '0')}:${String(nowBR.getUTCMinutes()).padStart(2, '0')}:00`
+
+  const candidatos = await sb(env,
+    `bookings?barbershop_id=eq.${body.barbershop_id}&barber_id=eq.${body.barber_id}&date=eq.${hoje}` +
+    `&status=eq.confirmed&start_time=gt.${nowStr}&select=*,services(name),barbershops(name,slug)&order=start_time.asc`)
+  if (!Array.isArray(candidatos) || !candidatos.length) return json({ none: true })
+
+  const cand = candidatos[0]
+  // Evita oferta duplicada pro mesmo agendamento
+  const abertas = await sb(env, `slot_offers?booking_id=eq.${cand.id}&status=eq.pending&select=id`)
+  if (Array.isArray(abertas) && abertas.length) return json({ already: true, client: cand.client_name })
+
+  // Alguém DEPOIS do primeiro caberia na janela de agora até o horário fixo dele?
+  const janela = minutos(cand.start_time) - (nowBR.getUTCHours() * 60 + nowBR.getUTCMinutes())
+  const temFila = candidatos.slice(1).some(c => (minutos(c.end_time) - minutos(c.start_time)) <= janela)
+  // Prazo: 5 min com fila; sem fila, até 10 min antes do horário fixo dele (mín. 5 min)
+  const validadeMs = temFila ? 5 * 60 * 1000
+    : Math.max(5 * 60 * 1000, (Date.parse(`${hoje}T${cand.start_time}Z`) + 3 * 3600 * 1000) - 10 * 60 * 1000 - Date.now())
+
+  const code = Array.from(crypto.getRandomValues(new Uint8Array(6)))
+    .map(b => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[b % 31]).join('')
+  const [offer] = await sb(env, 'slot_offers', {
+    method: 'POST',
+    body: JSON.stringify({
+      barbershop_id: cand.barbershop_id, barber_id: cand.barber_id,
+      date: hoje, slot_start: nowStr, slot_end: cand.start_time,
+      booking_id: cand.id, code, status: 'pending',
+      expires_at: new Date(Date.now() + validadeMs).toISOString()
+    })
+  }) || []
+  if (!offer) return json({ error: 'offer_failed' }, 500)
+
+  const shop = cand.barbershops || {}
+  await evoSend(env, cand.client_phone,
+    `⚡ *${shop.name}*\n\nBoa notícia, ${cand.client_name}! Liberamos mais cedo por aqui.\n` +
+    `Seu horário é às ${String(cand.start_time).slice(0, 5)} — *quer vir agora?*\n\n` +
+    `Toque e escolha:\n${shop.slug}.navalhanobigode.com.br/o/${code}\n\n` +
+    (temFila ? '⏱ Oferta válida por 5 minutos.' : '⏱ Sem pressa — vale até pertinho do seu horário.'))
+  return json({ ok: true, client: cand.client_name, at: String(cand.start_time).slice(0, 5) })
 }
 
 async function cascadeStart(request, env) {
@@ -1066,7 +1151,7 @@ async function loadValidOffer(env, valor, campo) {
   if (offer.status !== 'pending') return { err: offerMsg('Oferta encerrada', 'Essa vaga já foi resolvida. Seu horário original continua valendo.') }
   if (new Date(offer.expires_at) < new Date()) {
     await sb(env, `slot_offers?id=eq.${offer.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'expired' }) })
-    return { err: offerMsg('Oferta expirada', 'O prazo de 5 minutos passou. Seu horário original continua valendo.') }
+    return { err: offerMsg('Oferta expirada', 'O prazo da oferta passou. Seu horário original continua valendo.') }
   }
   const bk = await loadBookingFull(env, offer.booking_id)
   if (!bk || bk.status !== 'confirmed') return { err: offerMsg('Oferta encerrada', 'Seu agendamento mudou desde a oferta.') }
@@ -1111,16 +1196,24 @@ async function offerAct(request, env) {
 
   if (body.a === 'sim') {
     const dur = minutos(bk.end_time) - minutos(bk.start_time)
-    const oldWin = { barbershop_id: bk.barbershop_id, barber_id: bk.barber_id, date: bk.date, slot_start: bk.start_time, slot_end: bk.end_time }
+    const novoFim = horaStr(minutos(offer.slot_start) + dur)
+    // A vaga que ele deixa só começa depois do fim do NOVO horário (ex.: "venha agora"
+    // colado no horário antigo — o pedaço sobreposto não pode ser oferecido a ninguém)
+    const livreIni = novoFim > bk.start_time ? novoFim : bk.start_time
     await sb(env, `bookings?id=eq.${bk.id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ start_time: offer.slot_start, end_time: horaStr(minutos(offer.slot_start) + dur) })
+      body: JSON.stringify({ start_time: offer.slot_start, end_time: novoFim })
     })
     await sb(env, `slot_offers?id=eq.${offer.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'accepted' }) })
     const shop = bk.barbershops || {}
     await evoSend(env, bk.client_phone,
       `✅ Prontinho, ${bk.client_name}! Seu horário na ${shop.name} foi antecipado para *${String(offer.slot_start).slice(0,5)}* do dia ${fmtData(bk.date)}. Até lá! 💈`)
-    await offerNext(env, oldWin, oldWin.slot_start)
+    if (livreIni < bk.end_time) {
+      await offerNext(env, {
+        barbershop_id: bk.barbershop_id, barber_id: bk.barber_id,
+        date: bk.date, slot_start: livreIni, slot_end: bk.end_time
+      }, livreIni)
+    }
     return json({ titulo: 'Horário antecipado! ✅', texto: `Seu novo horário é ${String(offer.slot_start).slice(0,5)} do dia ${fmtData(bk.date)}. Enviamos a confirmação no seu WhatsApp.` })
   }
 
