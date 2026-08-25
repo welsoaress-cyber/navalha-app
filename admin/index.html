@@ -197,21 +197,23 @@ async function adminLogout() {
 }
 
 // ── Convidar barbeiro em 2 tempos: 1º contato curto (demo) e, quando ele topar, o teste (link único) ──
+// Atenção: nestas mensagens (que abrem via wa.me) use só emojis simples (✂️ ✅ ⏰) —
+// os "modernos" (💈 👉 🤝 🤜🤛) viram � no compose do WhatsApp em alguns Androids.
 function conviteTexto(nome) {
-  return `Fala${nome ? ', ' + nome : ''}! 💈\n\n` +
+  return `Fala${nome ? ', ' + nome : ''}! ✂️\n\n` +
     `Lancei um app de agendamento feito só pra barbearia — e lembrei de você.\n\n` +
     `Teu cliente marca o horário sozinho pelo link. Um robô no WhatsApp cuida do resto: confirma, manda lembrete e preenche horário vago quando alguém desmarca.\n\n` +
     `Vê funcionando — agenda um teste com o TEU WhatsApp e o robô te responde na hora:\n` +
-    `👉 https://demo.navalhanobigode.com.br\n\n` +
-    `Se curtir, te libero *10 dias grátis* na tua barbearia. É só me responder aqui 🤝`
+    `https://demo.navalhanobigode.com.br\n\n` +
+    `Se curtir, te libero *10 dias grátis* na tua barbearia. É só me responder aqui!`
 }
 
 function testeTexto(nome, trialUrl) {
-  return `Boa${nome ? ', ' + nome : ''}! 🤜🤛\n\n` +
+  return `Boa${nome ? ', ' + nome : ''}! Fechado então. ✅\n\n` +
     `Teu convite pessoal — *10 dias grátis*, sem pagar nada agora:\n` +
-    `👉 ${trialUrl}\n\n` +
+    `${trialUrl}\n\n` +
     `Leva uns 10 minutos: escolhe o plano, cadastra serviços e horários, e já sai com o teu link pronto pra mandar pros clientes.\n\n` +
-    `Se depois quiser ficar, é a partir de R$ 99/mês. Não curtiu? É só deixar pra lá. 🤝`
+    `Se depois quiser ficar, é a partir de R$ 99/mês. Não curtiu? É só deixar pra lá. Abraço! ✂️`
 }
 
 function openConvite() {
