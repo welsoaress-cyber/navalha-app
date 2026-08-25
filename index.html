@@ -468,9 +468,16 @@ async function renderSlots(main) {
     .select('barber_id, start_time, end_time')
     .eq('barbershop_id', state.shop.id)
     .eq('date', state.selectedDate)
-    .eq('status', 'confirmed')
+    .in('status', ['confirmed', 'blocked'])
 
-  const relevantBarbers = state.selectedBarber ? [state.selectedBarber] : state.barbers
+  // Dias fechados pelo barbeiro (folga, imprevisto) não oferecem horários
+  const { data: dayBlocks } = await db.from('blocked_days')
+    .select('barber_id')
+    .eq('date', state.selectedDate)
+  const blockedBarberIds = new Set((dayBlocks || []).map(b => b.barber_id))
+
+  const relevantBarbers = (state.selectedBarber ? [state.selectedBarber] : state.barbers)
+    .filter(b => !blockedBarberIds.has(b.id))
   const allSlots = new Map()
 
   relevantBarbers.forEach(barber => {

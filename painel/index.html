@@ -81,6 +81,7 @@
   .status-completed { background: rgba(34,197,94,0.12); color: var(--green); }
   .status-cancelled { background: rgba(239,68,68,0.12); color: var(--red); }
   .status-no_show { background: var(--surface-2); color: var(--ink-3); }
+  .status-blocked { background: rgba(148,163,184,0.15); color: var(--ink-2); }
 
   .empty-state { text-align: center; padding: 60px 20px; color: var(--ink-3); }
   .empty-icon { font-size: 40px; margin-bottom: 12px; }
@@ -245,6 +246,7 @@ async function renderAgenda() {
     <div class="date-row">
       <span class="date-label">Agenda de:</span>
       <input class="date-input" type="date" id="dateInput" value="${selectedDate}" onchange="changeDate(this.value)">
+      <button class="action-btn cancel" style="margin-left:auto;" onclick="closeDay()">🚫 Fechar este dia</button>
     </div>
     <div id="bookingsList"><div class="loading-overlay"><div class="spinner"></div> Carregando agenda…</div></div>`
 
@@ -353,7 +355,7 @@ async function loadBookings(date) {
 }
 
 function statusLabel(s) {
-  return {confirmed:'Confirmado', completed:'Concluído', cancelled:'Cancelado', no_show:'Faltou'}[s] || s
+  return {confirmed:'Confirmado', completed:'Concluído', cancelled:'Cancelado', no_show:'Faltou', blocked:'Fechado'}[s] || s
 }
 
 function changeDate(d) {
@@ -364,18 +366,8 @@ function changeDate(d) {
   loadWeekOverview()
 }
 
-// Cancela e abre o WhatsApp com a mensagem pronta para o cliente
-async function cancelBooking(id) {
-  const { data: bk } = await db.from('bookings')
-    .select('*, services(name)')
-    .eq('id', id).maybeSingle()
-  if (!bk) return
-  if (!confirm(`Cancelar o horário de ${bk.client_name} às ${bk.start_time.slice(0,5)}?\n\nDepois de confirmar, vamos abrir o WhatsApp com a mensagem pronta para avisar o cliente.`)) return
-
-  await db.from('bookings').update({ status: 'cancelled' }).eq('id', id)
-  loadBookings(selectedDate)
-  loadWeekOverview()
-
+// Mensagem pronta de cancelamento para o cliente
+function cancelMsgLink(bk) {
   const [ano, mes, dia] = bk.date.split('-')
   const linkApp = `https://${shop.slug}.navalhanobigode.com.br`
   const msg = encodeURIComponent(
@@ -385,7 +377,77 @@ async function cancelBooking(id) {
     `Você pode escolher um novo horário por aqui: ${linkApp}`
   )
   const phone = String(bk.client_phone || '').replace(/\D/g, '')
-  if (phone) window.open(`https://wa.me/55${phone}?text=${msg}`, '_blank')
+  return phone ? `https://wa.me/55${phone}?text=${msg}` : null
+}
+
+// Cancela um horário e abre o WhatsApp com a mensagem pronta
+async function cancelBooking(id) {
+  const { data: bk } = await db.from('bookings')
+    .select('*, services(name)')
+    .eq('id', id).maybeSingle()
+  if (!bk) return
+  if (!confirm(`Cancelar o horário de ${bk.client_name} às ${bk.start_time.slice(0,5)}?`)) return
+
+  // Vaga volta a ficar disponível ou fica fechada?
+  const manterFechado = confirm('O horário deve continuar FECHADO (você não vai atender nesse horário)?\n\nOK = manter fechado\nCancelar = liberar a vaga para outros clientes')
+  await db.from('bookings').update({ status: manterFechado ? 'blocked' : 'cancelled' }).eq('id', id)
+  loadBookings(selectedDate)
+  loadWeekOverview()
+
+  const link = cancelMsgLink(bk)
+  if (link) window.open(link, '_blank')
+}
+
+// Fecha o dia inteiro: bloqueia novos agendamentos e lista os clientes para avisar
+async function closeDay() {
+  const [ano, mes, dia] = selectedDate.split('-')
+  if (!confirm(`Fechar o dia ${dia}/${mes}?\n\n• Ninguém mais consegue agendar nesse dia\n• Os agendamentos existentes são desmarcados\n• Você recebe a lista de clientes para avisar pelo WhatsApp`)) return
+
+  const alvo = role === 'barber' ? [myBarber] : barbers.filter(b => b.active)
+
+  // Fecha o dia para os barbeiros
+  for (const b of alvo) {
+    await db.from('blocked_days').upsert({ barber_id: b.id, date: selectedDate }, { onConflict: 'barber_id,date' })
+  }
+
+  // Desmarca os agendamentos existentes
+  let q = db.from('bookings').select('*, services(name)')
+    .eq('barbershop_id', shop.id).eq('date', selectedDate).eq('status', 'confirmed')
+  if (role === 'barber') q = q.eq('barber_id', myBarber.id)
+  const { data: afetados } = await q
+
+  for (const bk of (afetados || [])) {
+    await db.from('bookings').update({ status: 'blocked' }).eq('id', bk.id)
+  }
+
+  loadBookings(selectedDate)
+  loadWeekOverview()
+
+  // Lista de avisos por WhatsApp
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'notifyModal'
+  const lista = (afetados || []).length
+    ? afetados.map(bk => `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border);">
+          <div style="flex:1;">
+            <div style="font-weight:700;">${bk.client_name}</div>
+            <div style="font-size:12px;color:var(--ink-2);">${bk.start_time.slice(0,5)} · ${bk.services?.name || ''}</div>
+          </div>
+          ${cancelMsgLink(bk) ? `<a class="btn-add" style="text-decoration:none;font-size:13px;padding:9px 14px;" href="${cancelMsgLink(bk)}" target="_blank">📱 Avisar</a>` : ''}
+        </div>`).join('')
+    : '<p style="color:var(--ink-2);font-size:14px;">Nenhum cliente tinha horário marcado nesse dia.</p>'
+
+  overlay.innerHTML = `
+    <div class="modal" style="max-height:85dvh;overflow-y:auto;">
+      <div class="modal-title">✅ Dia ${dia}/${mes} fechado</div>
+      <p style="font-size:13px;color:var(--ink-2);margin-bottom:12px;">Toque em "Avisar" para enviar a mensagem pronta a cada cliente:</p>
+      ${lista}
+      <div class="modal-actions">
+        <button class="btn-modal-save" onclick="document.getElementById('notifyModal').remove()">Concluído</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
 }
 
 async function updateStatus(id, status) {
