@@ -678,6 +678,7 @@ async function startPix(shopId) {
     document.getElementById('pixQrImg').src = 'data:image/png;base64,' + d.qr_base64
     document.getElementById('pixAmountAuto').textContent = 'R$ ' + d.amount
     document.getElementById('pixDescAuto').textContent = d.description
+    if (d.promo) document.getElementById('pixDescAuto').innerHTML = d.description + '<br><span style="color:#D4A843;font-weight:700;">🔥 ' + d.promo + '</span>'
     window._pixCode = d.qr_code
     loadEl.style.display = 'none'
     document.getElementById('payAuto').style.display = 'block'

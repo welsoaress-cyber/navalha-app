@@ -76,7 +76,11 @@ async function createPix(request, env) {
   if (!shop) return json({ error: 'not_found' }, 404)
 
   const plan = PLANS[shop.plan] || PLANS.solo
-  const amount = plan.monthly + plan.setup
+  // Datas duplas (1/1, 2/2, … 12/12): kit de instalação pela metade — a mensalidade nunca tem promoção
+  const hoje = todayBR()
+  const promoDupla = hoje.slice(8, 10) === hoje.slice(5, 7)
+  const setupCobrado = promoDupla ? Math.round(plan.setup / 2) : plan.setup
+  const amount = plan.monthly + setupCobrado
   const origin = new URL(request.url).origin
 
   // QR expira em 30 minutos (horário expresso em UTC-3)
@@ -88,7 +92,7 @@ async function createPix(request, env) {
     headers: { 'X-Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
       transaction_amount: amount,
-      description: `Navalha no Bigode — Plano ${plan.name} (1º mês + kit)`,
+      description: `Navalha no Bigode — Plano ${plan.name} (1º mês + kit${promoDupla ? ' promo ' + Number(hoje.slice(8, 10)) + '/' + Number(hoje.slice(5, 7)) : ''})`,
       payment_method_id: 'pix',
       payer: { email: shop.owner_email || 'cliente@navalhanobigode.com.br' },
       external_reference: shop.id,
@@ -103,7 +107,8 @@ async function createPix(request, env) {
   return json({
     payment_id: pd.id,
     amount,
-    description: `Plano ${plan.name} — 1º mês R$ ${plan.monthly} + Kit R$ ${plan.setup}`,
+    description: `Plano ${plan.name} — 1º mês R$ ${plan.monthly} + Kit R$ ${setupCobrado}`,
+    promo: promoDupla ? `Promoção ${Number(hoje.slice(8, 10))}/${Number(hoje.slice(5, 7))}: Kit de Instalação com 50% de desconto (de R$ ${plan.setup} por R$ ${setupCobrado})` : null,
     qr_code: tx && tx.qr_code,
     qr_base64: tx && tx.qr_code_base64,
     expires_in: 1800,
