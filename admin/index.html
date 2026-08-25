@@ -283,12 +283,15 @@ function renderClients() {
     el.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><p>Nenhum cliente cadastrado ainda.</p></div>'
     return
   }
+  const hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10)
+  const fmtD = d => d.slice(8, 10) + '/' + d.slice(5, 7)
   el.innerHTML = clients.map(c => `
     <div class="client-card">
       <div class="client-avatar">${c.name.charAt(0)}</div>
       <div class="client-body">
         <div class="client-name">${c.name}</div>
         <div class="client-slug">🔗 ${c.slug}.navalhanobigode.com.br</div>
+        ${c.next_due ? `<div class="client-slug" style="margin-top:2px;">${c.next_due < hoje ? `<span style="color:#f87171;font-weight:700;">🔴 Venceu dia ${fmtD(c.next_due)}</span>` : `📅 Vence dia ${fmtD(c.next_due)}`}</div>` : ''}
       </div>
       <span class="plan-pill plan-${c.plan}">${c.plan}</span>
       <span class="status-pill status-${c.status}">${statusLabel(c.status)}</span>

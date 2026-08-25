@@ -14,6 +14,8 @@ export default {
     const url = new URL(request.url)
     try {
       if (url.pathname === '/api/pix' && request.method === 'POST') return await createPix(request, env)
+      if (url.pathname === '/api/renew-pix' && request.method === 'POST') return await renewPix(request, env)
+      if (url.pathname === '/pagar') return await payPage(request, env)
       if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
       if (url.pathname === '/api/notify' && request.method === 'POST') return await notify(request, env)
       if (url.pathname === '/api/cascade' && request.method === 'POST') return await cascadeStart(request, env)
@@ -31,6 +33,7 @@ export default {
   async scheduled(event, env) {
     await sendReminders(env)
     await processExpiredOffers(env)
+    await checkBilling(env)
   }
 }
 
@@ -106,9 +109,17 @@ async function pixStatus(url, env) {
   const r = await mp(env, '/v1/payments/' + id)
   if (!r.ok) return json({ error: 'mp_error' }, 502)
   const d = await r.json()
-  // Redundância: se o webhook falhar, a própria consulta ativa a barbearia
-  if (d.status === 'approved' && d.external_reference) await activate(env, d.external_reference)
+  // Redundância: se o webhook falhar, a própria consulta ativa/renova a barbearia
+  if (d.status === 'approved') await handleApproved(env, d)
   return json({ status: d.status })
+}
+
+// Um pagamento aprovado pode ser a adesão (ref = id da barbearia) ou a mensalidade (ref = "ren:id")
+async function handleApproved(env, d) {
+  const ref = d.external_reference || ''
+  if (!ref) return
+  if (ref.startsWith('ren:')) await renewShop(env, ref.slice(4), String(d.id))
+  else await activate(env, ref)
 }
 
 async function mpWebhook(request, url, env) {
@@ -122,7 +133,7 @@ async function mpWebhook(request, url, env) {
     const r = await mp(env, '/v1/payments/' + paymentId)
     if (r.ok) {
       const d = await r.json()
-      if (d.status === 'approved' && d.external_reference) await activate(env, d.external_reference)
+      if (d.status === 'approved') await handleApproved(env, d)
     }
   }
   return new Response('ok')
@@ -132,8 +143,173 @@ async function activate(env, shopId) {
   await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(shopId) + '&status=neq.active', {
     method: 'PATCH',
     headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-    body: JSON.stringify({ status: 'active' })
+    body: JSON.stringify({ status: 'active', next_due: addMonths(todayBR(), 1) })
   })
+}
+
+// ── Cobrança mensal via Pix ──
+function todayBR() { return new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10) }
+function addDays(dateStr, n) { return new Date(Date.parse(dateStr) + n * 86400000).toISOString().slice(0, 10) }
+function diasEntre(a, b) { return Math.round((Date.parse(a) - Date.parse(b)) / 86400000) }
+function addMonths(dateStr, n) {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const alvo = new Date(Date.UTC(y, m - 1 + n, 1))
+  const ultimo = new Date(Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth() + 1, 0)).getUTCDate()
+  alvo.setUTCDate(Math.min(d, ultimo))
+  return alvo.toISOString().slice(0, 10)
+}
+
+// Gera o Pix da mensalidade (só o valor mensal, sem kit) — válido por 24h
+async function renewPix(request, env) {
+  if (!env.MP_ACCESS_TOKEN || !env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
+  let body
+  try { body = await request.json() } catch { return json({ error: 'bad_request' }, 400) }
+  const shopId = body.barbershop_id
+  if (!shopId || !/^[a-f0-9-]+$/.test(shopId)) return json({ error: 'bad_request' }, 400)
+
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,plan,owner_email`) || []
+  if (!shop) return json({ error: 'not_found' }, 404)
+
+  const plan = PLANS[shop.plan] || PLANS.solo
+  const origin = new URL(request.url).origin
+  const expStr = new Date(Date.now() + 24 * 3600 * 1000 - 3 * 3600 * 1000).toISOString().replace('Z', '-03:00')
+
+  const pr = await mp(env, '/v1/payments', {
+    method: 'POST',
+    headers: { 'X-Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify({
+      transaction_amount: plan.monthly,
+      description: `Navalha no Bigode — Mensalidade Plano ${plan.name}`,
+      payment_method_id: 'pix',
+      payer: { email: shop.owner_email || 'cliente@navalhanobigode.com.br' },
+      external_reference: 'ren:' + shop.id,
+      notification_url: origin + '/api/mp-webhook',
+      date_of_expiration: expStr,
+    })
+  })
+  const pd = await pr.json()
+  if (!pr.ok) return json({ error: 'mp_error', detail: pd && pd.message }, 502)
+  const tx = pd.point_of_interaction && pd.point_of_interaction.transaction_data
+  return json({ payment_id: pd.id, amount: plan.monthly, qr_code: tx && tx.qr_code, qr_base64: tx && tx.qr_code_base64 })
+}
+
+// Mensalidade paga: empurra o vencimento +1 mês e reativa tudo na hora
+async function renewShop(env, shopId, paymentId) {
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,plan,next_due,owner_phone,last_renewal_payment_id`) || []
+  if (!shop) return
+  if (shop.last_renewal_payment_id === paymentId) return // webhook repete o aviso; cobra só uma vez
+
+  const hoje = todayBR()
+  const base = (shop.next_due && shop.next_due > hoje) ? shop.next_due : hoje
+  const novo = addMonths(base, 1)
+  await sb(env, `barbershops?id=eq.${shop.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: 'active', next_due: novo, last_renewal_payment_id: paymentId })
+  })
+  const plan = PLANS[shop.plan] || PLANS.solo
+  await evoSend(env, shop.owner_phone,
+    `✅ *Pagamento recebido!*\n\n💈 ${shop.name}\nMensalidade de R$ ${plan.monthly} confirmada.\nSeu sistema está garantido até *${fmtData(novo)}*. Obrigado! 🤝`)
+}
+
+// Roda no cron: avisos 3 dias antes / no dia, bloqueio ao vencer e suspensão após 5 dias
+async function checkBilling(env) {
+  if (!env.SUPABASE_SERVICE_KEY) return
+  const nowBR = new Date(Date.now() - 3 * 3600 * 1000)
+  if (nowBR.getUTCHours() !== 9) return // mensagens de cobrança saem às 9h de Brasília
+
+  const hoje = todayBR()
+  const shops = await sb(env,
+    `barbershops?status=eq.active&next_due=not.is.null&next_due=lte.${addDays(hoje, 3)}` +
+    `&select=id,name,slug,plan,owner_phone,next_due,billing_notified_3d,billing_notified_due,billing_notified_overdue`)
+  if (!Array.isArray(shops)) return
+
+  for (const shop of shops) {
+    const plan = PLANS[shop.plan] || PLANS.solo
+    const due = shop.next_due
+    const diff = diasEntre(due, hoje) // dias até vencer (negativo = vencido)
+    const linkPagar = `${shop.slug}.navalhanobigode.com.br/pagar`
+    const patch = obj => sb(env, `barbershops?id=eq.${shop.id}`, { method: 'PATCH', body: JSON.stringify(obj) })
+
+    if (diff >= 1 && diff <= 3 && shop.billing_notified_3d !== due) {
+      const ok = await evoSend(env, shop.owner_phone,
+        `💈 *${shop.name}*\n\nSua mensalidade do plano ${plan.name} (R$ ${plan.monthly}) vence ${diff === 1 ? '*amanhã*' : `em *${diff} dias*`}, dia ${fmtData(due)}.\n\nPague com 1 toque (Pix):\n${linkPagar}`)
+      if (ok) await patch({ billing_notified_3d: due })
+    } else if (diff === 0 && shop.billing_notified_due !== due) {
+      const ok = await evoSend(env, shop.owner_phone,
+        `💈 *${shop.name}*\n\n⚠️ Sua mensalidade (R$ ${plan.monthly}) vence *hoje*, dia ${fmtData(due)}.\n\nPague agora e não perca o acesso ao painel:\n${linkPagar}`)
+      if (ok) await patch({ billing_notified_due: due })
+    } else if (diff < 0) {
+      if (shop.billing_notified_overdue !== due) {
+        const ok = await evoSend(env, shop.owner_phone,
+          `💈 *${shop.name}*\n\n🔒 Sua mensalidade venceu dia ${fmtData(due)} e o painel foi *bloqueado* — seus clientes continuam agendando, mas você não vê a agenda.\n\nPague o Pix de R$ ${plan.monthly} e o acesso volta na hora:\n${linkPagar}`)
+        if (ok) await patch({ billing_notified_overdue: due })
+      }
+      if (diff <= -6) {
+        await patch({ status: 'suspended' })
+        await evoSend(env, shop.owner_phone,
+          `💈 *${shop.name}*\n\n🚫 Com ${-diff} dias de atraso, sua página de agendamento *saiu do ar* — seus clientes não conseguem mais agendar.\n\nPague o Pix de R$ ${plan.monthly} e tudo volta na hora:\n${linkPagar}`)
+      }
+    }
+  }
+}
+
+// Página de pagamento da mensalidade: slug.navalhanobigode.com.br/pagar
+async function payPage(request, env) {
+  const url = new URL(request.url)
+  let slug = url.searchParams.get('s')
+  if (!slug && url.hostname.endsWith('.navalhanobigode.com.br')) slug = url.hostname.split('.')[0]
+  if (!slug || !/^[a-z0-9-]+$/.test(slug)) return offerHtml(offerMsg('Página não encontrada', 'Confira o link recebido no WhatsApp.'))
+
+  const [shop] = await sb(env, `barbershops?slug=eq.${slug}&select=id,name,plan,next_due`) || []
+  if (!shop) return offerHtml(offerMsg('Barbearia não encontrada', 'Confira o link recebido no WhatsApp.'))
+
+  const plan = PLANS[shop.plan] || PLANS.solo
+  const hoje = todayBR()
+  const vencida = shop.next_due && shop.next_due < hoje
+  const situacao = shop.next_due
+    ? (vencida ? `<span style="color:#f87171;font-weight:bold;">Venceu dia ${fmtData(shop.next_due)}</span>` : `Vence dia ${fmtData(shop.next_due)}`)
+    : ''
+
+  return offerHtml(`
+    ${offerMsg(shop.name, `Mensalidade do plano ${plan.name} — <strong style="color:#F8FAFC;">R$ ${plan.monthly}</strong><br>${situacao}`)}
+    <div id="pix" style="margin-top:20px;color:#94A3B8;font-size:14px;">Gerando seu Pix…</div>
+    <script>
+      const pixEl = document.getElementById('pix')
+      let pollTimer = null
+      async function gera() {
+        pixEl.innerHTML = 'Gerando seu Pix…'
+        try {
+          const r = await fetch('/api/renew-pix', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: '${shop.id}' }) })
+          const d = await r.json()
+          if (!d.qr_base64) throw new Error('sem qr')
+          pixEl.innerHTML =
+            '<img src="data:image/png;base64,' + d.qr_base64 + '" style="width:210px;border-radius:12px;background:#fff;padding:8px;" alt="QR Code Pix">' +
+            '<p style="font-size:13px;color:#94A3B8;margin:14px 0 8px;">Escaneie o QR Code no app do seu banco<br>ou use o copia e cola:</p>' +
+            '<input id="cec" readonly value="' + d.qr_code + '" style="width:100%;padding:10px;border-radius:8px;border:1px solid #334155;background:#1E293B;color:#94A3B8;font-size:11px;">' +
+            '<button onclick="copia()" id="btnCopia" style="width:100%;margin-top:8px;padding:13px;border-radius:10px;border:none;background:#D4A843;color:#0F172A;font-weight:bold;font-size:15px;cursor:pointer;">📋 Copiar código Pix</button>' +
+            '<p style="font-size:12px;color:#64748B;margin-top:10px;">Assim que pagar, a confirmação é automática.</p>'
+          pollTimer = setInterval(async () => {
+            try {
+              const s = await fetch('/api/pix-status?id=' + d.payment_id).then(x => x.json())
+              if (s.status === 'approved') {
+                clearInterval(pollTimer)
+                document.getElementById('box').innerHTML = '<div style="font-size:44px;margin-bottom:12px;">✅</div><h2 style="color:#4ade80;margin:0 0 10px;">Pagamento confirmado!</h2><p style="color:#94A3B8;font-size:15px;line-height:1.6;">Seu sistema está liberado. Enviamos a confirmação no seu WhatsApp.</p><a href="/painel/" style="display:inline-block;margin-top:16px;background:#D4A843;color:#0F172A;font-weight:bold;text-decoration:none;padding:13px 24px;border-radius:10px;">Abrir meu painel</a>'
+              }
+            } catch (e) {}
+          }, 5000)
+        } catch (e) {
+          pixEl.innerHTML = '<p style="color:#f87171;font-size:14px;">Não foi possível gerar o Pix.</p><button onclick="gera()" style="margin-top:8px;padding:12px 22px;border-radius:10px;border:1px solid #334155;background:none;color:#F8FAFC;cursor:pointer;">Tentar de novo</button>'
+        }
+      }
+      function copia() {
+        const cec = document.getElementById('cec')
+        cec.select(); cec.setSelectionRange(0, 99999)
+        navigator.clipboard.writeText(cec.value).catch(() => document.execCommand('copy'))
+        document.getElementById('btnCopia').textContent = '✅ Copiado!'
+        setTimeout(() => { const b = document.getElementById('btnCopia'); if (b) b.textContent = '📋 Copiar código Pix' }, 2500)
+      }
+      gera()
+    </script>`)
 }
 
 // E-mail de boas-vindas com orientações de uso (via Resend)

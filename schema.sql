@@ -12,6 +12,12 @@ create table if not exists public.barbershops (
   slug          text unique not null,        -- URL: joao → joao.navalhanobigode.com.br
   name          text not null,               -- "Barbearia do João"
   owner_email   text,
+  owner_phone   text,                       -- WhatsApp do dono (avisos e cobrança)
+  next_due      date,                       -- vencimento da mensalidade
+  billing_notified_3d date,                 -- controle de avisos enviados (por vencimento)
+  billing_notified_due date,
+  billing_notified_overdue date,
+  last_renewal_payment_id text,             -- evita renovação duplicada pelo webhook
   logo_url      text,
   primary_color text default '#D4A843',      -- cor principal (hex)
   plan          text default 'solo',         -- solo | equipe | black
