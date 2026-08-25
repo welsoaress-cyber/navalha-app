@@ -17,6 +17,7 @@ export default {
       if (url.pathname === '/api/renew-pix' && request.method === 'POST') return await renewPix(request, env)
       if (url.pathname === '/api/trial-activate' && request.method === 'POST') return await trialActivate(request, env)
       if (url.pathname === '/api/trial-invite' && request.method === 'POST') return await trialInvite(request, env)
+      if (url.pathname === '/api/admin-stats') return await adminStats(request, env)
       if (url.pathname.startsWith('/late/')) return await latePage(url.pathname.slice(6).split('/')[0], env)
       if (url.pathname === '/api/late-act' && request.method === 'POST') return await lateAct(request, env)
       if (url.pathname === '/api/cards-pix' && request.method === 'POST') return await cardsPix(request, env)
@@ -228,17 +229,43 @@ async function activate(env, shopId) {
 const TRIAL_DAYS = 10
 const ADMIN_EMAIL = 'welsoaress@gmail.com'
 
-// Gera um convite novo — só o admin logado consegue (valida o token da sessão Supabase)
-async function trialInvite(request, env) {
-  if (!env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
+// Valida que a requisição vem do admin logado (token da sessão Supabase)
+async function adminOk(request, env) {
   const auth = request.headers.get('Authorization') || ''
-  if (!auth.startsWith('Bearer ')) return json({ error: 'forbidden' }, 403)
+  if (!auth.startsWith('Bearer ')) return false
   const ur = await fetch(env.SUPABASE_URL + '/auth/v1/user', {
     headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: auth }
   })
-  if (!ur.ok) return json({ error: 'forbidden' }, 403)
+  if (!ur.ok) return false
   const u = await ur.json()
-  if ((u.email || '').toLowerCase() !== ADMIN_EMAIL) return json({ error: 'forbidden' }, 403)
+  return (u.email || '').toLowerCase() === ADMIN_EMAIL
+}
+
+// Estatísticas por barbearia pro painel admin (total, últimos 7 dias, futuros)
+async function adminStats(request, env) {
+  if (!env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
+  if (!(await adminOk(request, env))) return json({ error: 'forbidden' }, 403)
+  const r = await fetch(env.SUPABASE_URL + '/rest/v1/bookings?select=barbershop_id,date,status&status=neq.blocked', {
+    headers: { ...sbHeaders(env), Range: '0-9999' }
+  })
+  const rows = await r.json()
+  if (!Array.isArray(rows)) return json({ stats: {} })
+  const hoje = todayBR()
+  const semanaIni = addDays(hoje, -7)
+  const stats = {}
+  for (const b of rows) {
+    const s = stats[b.barbershop_id] || (stats[b.barbershop_id] = { total: 0, semana: 0, futuros: 0 })
+    s.total++
+    if (b.date >= semanaIni && b.date <= hoje) s.semana++
+    if (b.date >= hoje && b.status === 'confirmed') s.futuros++
+  }
+  return json({ stats })
+}
+
+// Gera um convite novo — só o admin logado consegue (valida o token da sessão Supabase)
+async function trialInvite(request, env) {
+  if (!env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
+  if (!(await adminOk(request, env))) return json({ error: 'forbidden' }, 403)
 
   let body = {}
   try { body = await request.json() } catch {}

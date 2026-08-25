@@ -364,10 +364,33 @@ async function saveSetPass(id) {
   alert(`✅ Senha de ${c.owner_email} alterada para: ${pass}\n\nInforme ao barbeiro por telefone ou WhatsApp.`)
 }
 
+let shopStats = {}
 async function loadClients() {
   const { data } = await db.from('barbershops').select('*').order('created_at', { ascending: false })
   clients = data || []
   renderClients()
+  loadShopStats() // agendamentos por barbearia (não bloqueia a lista)
+}
+
+async function loadShopStats() {
+  try {
+    const { data: { session } } = await db.auth.getSession()
+    const r = await fetch('/api/admin-stats', { headers: { 'Authorization': 'Bearer ' + (session?.access_token || '') } })
+    const d = await r.json()
+    if (d.stats) { shopStats = d.stats; renderClients() }
+  } catch (e) {}
+}
+
+// Linha de saúde do cliente: mede se ele está usando, evoluindo ou precisando de ajuda
+function statsLine(c) {
+  const s = shopStats[c.id]
+  if (!s) return ''
+  const idadeDias = Math.floor((Date.now() - Date.parse(c.created_at)) / 86400000)
+  if (s.total === 0) {
+    const alerta = idadeDias >= 2
+    return `<div class="client-slug" style="margin-top:2px;${alerta ? 'color:#fbbf24;font-weight:700;' : ''}">📊 Nenhum agendamento ainda${alerta ? ' — dá um alô pra ajudar!' : ''}</div>`
+  }
+  return `<div class="client-slug" style="margin-top:2px;">📊 <strong>${s.total}</strong> agendamento${s.total > 1 ? 's' : ''} · ${s.semana} nos últimos 7 dias · ${s.futuros} futuro${s.futuros === 1 ? '' : 's'}${s.semana > 0 ? ' <span style="color:#4ade80;">▲</span>' : ''}</div>`
 }
 
 function renderClients() {
@@ -385,6 +408,7 @@ function renderClients() {
         <div class="client-name">${c.name}</div>
         <div class="client-slug">🔗 ${c.slug}.navalhanobigode.com.br</div>
         ${c.next_due ? `<div class="client-slug" style="margin-top:2px;">${c.next_due < hoje ? `<span style="color:#f87171;font-weight:700;">🔴 Venceu dia ${fmtD(c.next_due)}</span>` : `📅 Vence dia ${fmtD(c.next_due)}`}</div>` : ''}
+        ${statsLine(c)}
       </div>
       <span class="plan-pill plan-${c.plan}">${c.plan}</span>
       <span class="status-pill status-${c.status}">${statusLabel(c.status)}</span>
