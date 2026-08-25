@@ -401,15 +401,19 @@ function renderClients() {
   }
   const hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10)
   const fmtD = d => d.slice(8, 10) + '/' + d.slice(5, 7)
+  // Em teste = ativo que nunca pagou nada (nem kit, nem mensalidade). Demo fica de fora.
+  const emTeste = c => c.status === 'active' && !c.kit_paid && !c.last_renewal_payment_id && c.slug !== 'demo' && c.next_due
+  const diasTeste = c => Math.max(0, Math.round((Date.parse(c.next_due) - Date.parse(hoje)) / 86400000))
   el.innerHTML = clients.map(c => `
-    <div class="client-card">
+    <div class="client-card" ${emTeste(c) ? 'style="border-left:4px solid var(--primary);"' : ''}>
       <div class="client-avatar">${c.name.charAt(0)}</div>
       <div class="client-body">
         <div class="client-name">${c.name}</div>
         <div class="client-slug">🔗 ${c.slug}.navalhanobigode.com.br</div>
-        ${c.next_due ? `<div class="client-slug" style="margin-top:2px;">${c.next_due < hoje ? `<span style="color:#f87171;font-weight:700;">🔴 Venceu dia ${fmtD(c.next_due)}</span>` : `📅 Vence dia ${fmtD(c.next_due)}`}</div>` : ''}
+        ${c.next_due ? `<div class="client-slug" style="margin-top:2px;">${c.next_due < hoje ? `<span style="color:#f87171;font-weight:700;">🔴 Venceu dia ${fmtD(c.next_due)}</span>` : (emTeste(c) ? `⏳ Teste termina dia ${fmtD(c.next_due)}` : `📅 Vence dia ${fmtD(c.next_due)}`)}</div>` : ''}
         ${statsLine(c)}
       </div>
+      ${emTeste(c) ? `<span class="plan-pill" style="background:rgba(212,168,67,0.15);border:1px solid rgba(212,168,67,0.45);color:var(--primary);font-weight:800;">🎁 TESTE · ${diasTeste(c) === 0 ? 'último dia!' : 'faltam ' + diasTeste(c) + ' dia' + (diasTeste(c) > 1 ? 's' : '')}</span>` : ''}
       <span class="plan-pill plan-${c.plan}">${c.plan}</span>
       <span class="status-pill status-${c.status}">${statusLabel(c.status)}</span>
       <div class="client-actions">
