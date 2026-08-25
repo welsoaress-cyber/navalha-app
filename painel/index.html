@@ -427,6 +427,7 @@ async function loadBookings(date) {
         <div class="booking-name">${bk.client_name}</div>
         <div class="booking-detail"><span class="booking-service">✂️ ${bk.services?.name || 'Serviço'}${bk.services?.duration_minutes ? ' · ' + bk.services.duration_minutes + 'min' : ''}</span></div>
         <div class="booking-detail">📞 ${bk.client_phone}</div>
+        ${bk.notes ? `<div class="booking-detail" style="color:var(--gold);">💬 ${esc(bk.notes)}</div>` : ''}
       </div>
       <div class="booking-barber">${bk.barbers?.name || '—'}</div>
       <span class="status-pill status-${bk.status}">${statusLabel(bk.status)}</span>
@@ -527,6 +528,11 @@ function copiaPixCartoes() {
 
 function statusLabel(s) {
   return {confirmed:'Confirmado', completed:'Concluído', cancelled:'Cancelado', no_show:'Faltou', blocked:'Fechado'}[s] || s
+}
+
+// Escapa texto digitado pelo cliente antes de injetar no HTML
+function esc(t) {
+  return String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
 }
 
 function changeDate(d) {

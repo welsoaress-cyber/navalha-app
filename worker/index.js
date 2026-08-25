@@ -23,6 +23,8 @@ export default {
       if (url.pathname.startsWith('/late/')) return await latePage(url.pathname.slice(6).split('/')[0], env)
       if (url.pathname === '/api/late-act' && request.method === 'POST') return await lateAct(request, env)
       if (url.pathname === '/api/reschedule' && request.method === 'POST') return await reschedule(request, env)
+      if (url.pathname.startsWith('/c/')) return await cancelPage(url.pathname.slice(3).split('/')[0], env)
+      if (url.pathname === '/api/cancel-act' && request.method === 'POST') return await cancelAct(request, env)
       if (url.pathname === '/api/cards-pix' && request.method === 'POST') return await cardsPix(request, env)
       if (url.pathname === '/pagar') return await payPage(request, env)
       if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
@@ -746,7 +748,8 @@ async function notify(request, env) {
   let text = null
 
   if (body.type === 'booking_new') {
-    text = `✅ *Agendamento confirmado!*\n\n💈 ${shop.name}\n${servico}${barbeiro}📅 ${fmtData(bk.date)} às ${hora}\n\nAté lá, ${bk.client_name}! Se precisar remarcar: ${link}`
+    const obs = bk.notes ? `📝 Obs: ${bk.notes}\n` : ''
+    text = `✅ *Agendamento confirmado!*\n\n💈 ${shop.name}\n${servico}${barbeiro}${obs}📅 ${fmtData(bk.date)} às ${hora}\n\nAté lá, ${bk.client_name}!\nRemarcar: ${link}\nNão vai poder ir? Cancele: https://${shop.slug}.navalhanobigode.com.br/c/${bk.id}`
     // Barbearia demo: quem agenda é dono de barbearia testando — a confirmação vira convite
     if (shop.slug === 'demo') {
       text += `\n\n—\n🤖 Gostou? Esse robô sou eu, o *Navalha no Bigode*. Na SUA barbearia eu faria tudo isso sozinho:\n\n` +
@@ -781,6 +784,56 @@ async function notify(request, env) {
     })
   }
   return json({ sent })
+}
+
+// ── Auto-cancelamento pelo cliente: link /c/<id> na confirmação e no lembrete ──
+async function cancelPage(bookingId, env) {
+  if (!/^[a-f0-9-]{36}$/.test(bookingId || '')) return offerHtml(offerMsg('Link inválido', 'Confira o link recebido no WhatsApp.'))
+  const bk = await loadBookingFull(env, bookingId)
+  if (!bk) return offerHtml(offerMsg('Link inválido', 'Confira o link recebido no WhatsApp.'))
+  if (bk.status !== 'confirmed') return offerHtml(offerMsg('Já resolvido', 'Esse horário já foi cancelado ou concluído.'))
+  if (bk.date < todayBR()) return offerHtml(offerMsg('Horário no passado', 'Esse agendamento já passou.'))
+  const shop = bk.barbershops || {}
+  const btn = 'width:100%;padding:15px;border-radius:12px;border:none;font-size:16px;font-weight:bold;cursor:pointer;font-family:inherit;'
+  return offerHtml(`
+    ${offerMsg('Cancelar seu horário?', `${bk.services?.name ? '<strong style="color:#F8FAFC;">' + bk.services.name + '</strong><br>' : ''}${fmtData(bk.date)} às <strong style="color:#F8FAFC;">${String(bk.start_time).slice(0, 5)}</strong> na ${shop.name || 'barbearia'}.`)}
+    <div style="margin-top:22px;display:flex;flex-direction:column;gap:10px;">
+      <button style="${btn}background:#7f1d1d;color:#fff;" onclick="resp()">Sim, cancelar meu horário</button>
+      <a href="https://${shop.slug}.navalhanobigode.com.br" style="${btn}display:block;background:none;border:1.5px solid #334155;color:#94A3B8;text-decoration:none;">Voltar (manter horário)</a>
+    </div>
+    <script>
+      async function resp() {
+        document.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.opacity = 0.5 })
+        try {
+          const r = await fetch('/api/cancel-act', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ b: '${bookingId}' }) })
+          const d = await r.json()
+          document.getElementById('box').innerHTML = '<div style="font-size:44px;margin-bottom:12px;">💈</div><h2 style="color:#D4A843;margin:0 0 10px;">' + d.titulo + '</h2><p style="color:#94A3B8;font-size:15px;line-height:1.6;">' + d.texto + '</p>'
+        } catch (e) {
+          alert('Falha de conexão. Tente de novo.')
+          document.querySelectorAll('button').forEach(b => { b.disabled = false; b.style.opacity = 1 })
+        }
+      }
+    </script>`)
+}
+
+async function cancelAct(request, env) {
+  let body
+  try { body = await request.json() } catch { return json({ titulo: 'Erro', texto: 'Requisição inválida.' }, 400) }
+  if (!/^[a-f0-9-]{36}$/.test(body.b || '')) return json({ titulo: 'Erro', texto: 'Link inválido.' }, 400)
+  const bk = await loadBookingFull(env, body.b)
+  if (!bk) return json({ titulo: 'Erro', texto: 'Link inválido.' }, 404)
+  if (bk.status !== 'confirmed' || bk.date < todayBR()) return json({ titulo: 'Já resolvido', texto: 'Esse horário já foi atualizado.' })
+
+  await sb(env, `bookings?id=eq.${bk.id}&status=eq.confirmed`, { method: 'PATCH', body: JSON.stringify({ status: 'cancelled' }) })
+  // Vaga liberada entra na cascata de antecipação
+  await offerNext(env, {
+    barbershop_id: bk.barbershop_id, barber_id: bk.barber_id,
+    date: bk.date, slot_start: bk.start_time, slot_end: bk.end_time
+  }, bk.start_time)
+  const shop = bk.barbershops || {}
+  if (shop.owner_phone) await evoSend(env, shop.owner_phone,
+    `❌ *${bk.client_name}* cancelou o horário de ${fmtData(bk.date)} às ${String(bk.start_time).slice(0, 5)}${bk.services?.name ? ' (' + bk.services.name + ')' : ''}. Já estou oferecendo a vaga pros próximos clientes. ⚡`)
+  return json({ titulo: 'Horário cancelado 🤝', texto: `Tudo certo, ${bk.client_name}. Quando quiser voltar, é só agendar: ${shop.slug}.navalhanobigode.com.br` })
 }
 
 // ── Remarcação: cliente trocou de horário — cancela o antigo, avisa certo e cascateia a vaga ──
@@ -919,7 +972,7 @@ async function sendReminders(env) {
 
     const shop = bk.barbershops || {}
     const hora = String(bk.start_time).slice(0, 5)
-    const text = `⏰ *Lembrete do seu horário!*\n\n💈 ${shop.name}\n${bk.services?.name ? '✂️ ' + bk.services.name + '\n' : ''}📅 Hoje às ${hora}\n\nTe esperamos, ${bk.client_name}! Se não puder vir, remarque em: ${shop.slug}.navalhanobigode.com.br`
+    const text = `⏰ *Lembrete do seu horário!*\n\n💈 ${shop.name}\n${bk.services?.name ? '✂️ ' + bk.services.name + '\n' : ''}📅 Hoje às ${hora}\n\nTe esperamos, ${bk.client_name}!\nSe não puder vir, remarque em: ${shop.slug}.navalhanobigode.com.br\nOu cancele: https://${shop.slug}.navalhanobigode.com.br/c/${bk.id}`
     const ok = await evoSend(env, bk.client_phone, text)
     if (ok) {
       await fetch(env.SUPABASE_URL + '/rest/v1/bookings?id=eq.' + bk.id, {

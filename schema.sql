@@ -94,6 +94,7 @@ create table if not exists public.booking_changes (
 -- ----------------------------------------
 -- "TÁ CHEGANDO?" (cliente atrasado) — colunas de controle em bookings
 -- ----------------------------------------
+alter table public.bookings add column if not exists notes text;  -- observação do cliente no agendamento
 alter table public.bookings add column if not exists late_check_sent_at timestamptz;
 alter table public.bookings add column if not exists late_reply text;  -- coming | cancel | timeout
 
