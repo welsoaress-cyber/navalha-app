@@ -388,19 +388,15 @@ async function cancelBooking(id) {
   if (!bk) return
   if (!confirm(`Cancelar o horário de ${bk.client_name} às ${bk.start_time.slice(0,5)}?`)) return
 
-  // Vaga volta a ficar disponível ou fica fechada?
-  const manterFechado = confirm('O horário deve continuar FECHADO (você não vai atender nesse horário)?\n\nOK = manter fechado\nCancelar = liberar a vaga para outros clientes')
-  await db.from('bookings').update({ status: manterFechado ? 'blocked' : 'cancelled' }).eq('id', id)
+  await db.from('bookings').update({ status: 'cancelled' }).eq('id', id)
   loadBookings(selectedDate)
   loadWeekOverview()
 
   // Vaga liberada: dispara o efeito cascata (oferece antecipação a quem vem depois)
-  if (!manterFechado) {
-    fetch('/api/cascade', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ booking_id: id })
-    }).catch(() => {})
-  }
+  fetch('/api/cascade', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ booking_id: id })
+  }).catch(() => {})
 
   // Aviso automático no WhatsApp do cliente; se falhar, abre o manual
   try {
