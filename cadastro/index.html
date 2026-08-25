@@ -646,6 +646,17 @@ async function createAccount() {
   fetch('/api/welcome', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: shopId }) }).catch(() => {})
 }
 
+// ── Conversões do Google Ads ──
+// Rótulos gerados no painel do Ads (Metas → Conversões). Vazio = não dispara.
+const CONV = {
+  pix:  '',   // "Cadastro chegou ao Pix" (intenção máxima)
+  pago: ''    // "Pagamento confirmado" (venda real, com valor)
+}
+function conv(label, params) {
+  if (!label || typeof gtag !== 'function') return
+  gtag('event', 'conversion', Object.assign({ send_to: 'AW-18408907250/' + label, transport_type: 'beacon' }, params || {}))
+}
+
 // ── Pagamento automático via Mercado Pago ──
 let _pollTimer = null, _cdTimer = null
 
@@ -669,6 +680,8 @@ async function startPix(shopId) {
     window._pixCode = d.qr_code
     loadEl.style.display = 'none'
     document.getElementById('payAuto').style.display = 'block'
+    window._pixAmount = Number(d.amount) || 0
+    if (!window._convPix) { window._convPix = true; conv(CONV.pix) }
     const st = document.getElementById('payStatus')
     st.innerHTML = '⏳ Aguardando pagamento… assim que o Pix cair, sua barbearia é ativada automaticamente.'
     st.style.color = '#94A3B8'
@@ -717,6 +730,7 @@ function pollPix(paymentId) {
       if (d.status === 'approved') {
         clearInterval(_pollTimer)
         clearInterval(_cdTimer)
+        if (!window._convPago) { window._convPago = true; conv(CONV.pago, { value: window._pixAmount || 249, currency: 'BRL' }) }
         document.getElementById('pixTimer').textContent = ''
         const el = document.getElementById('payStatus')
         el.innerHTML = '✅ <strong>Pagamento confirmado!</strong> Sua barbearia já está ativa — bom trabalho! 💈'
