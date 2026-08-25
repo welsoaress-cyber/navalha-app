@@ -531,7 +531,14 @@ async function notify(request, env) {
     text = `✅ *Agendamento confirmado!*\n\n💈 ${shop.name}\n${servico}${barbeiro}📅 ${fmtData(bk.date)} às ${hora}\n\nAté lá, ${bk.client_name}! Se precisar remarcar: ${link}`
     // Barbearia demo: quem agenda é dono de barbearia testando — a confirmação vira convite
     if (shop.slug === 'demo') {
-      text += `\n\n—\n🤖 Gostou? Esse robô sou eu, o *Navalha no Bigode*, trabalhando de verdade. Eu confirmo, lembro o cliente antes do corte, recupero horário cancelado e te mando o resumo da semana.\n\nTenha isso na SUA barbearia ainda hoje, a partir de R$ 99/mês com 30 dias de garantia:\n👉 cadastro.navalhanobigode.com.br`
+      text += `\n\n—\n🤖 Gostou? Esse robô sou eu, o *Navalha no Bigode*. Na SUA barbearia eu faria tudo isso sozinho:\n\n` +
+        `✅ Confirmo cada agendamento na hora\n` +
+        `⏰ Lembro o cliente antes do corte (adeus, furo de horário)\n` +
+        `⚡ Alguém cancelou? Ofereço a vaga pro próximo cliente no mesmo minuto\n` +
+        `🤝 Agradeço depois do corte e convido o cliente a voltar\n` +
+        `📊 Toda segunda te mando o resumo: agendamentos, faturamento e os cortes mais pedidos\n` +
+        `📱 E sua barbearia ganha link próprio de agendamento + painel completo\n\n` +
+        `🚀 Fica pronto no MESMO dia, configurado por nós.\nA partir de R$ 99/mês, com 30 dias de garantia:\n👉 cadastro.navalhanobigode.com.br`
     }
   } else if (body.type === 'booking_done') {
     text = `💈 *${shop.name}*\n\nObrigado pela visita, ${bk.client_name}! ✂️✨\nEsperamos que tenha ficado no capricho.\n\nQuando precisar, é só agendar de novo: ${link}\n\nAté a próxima! 🤝`
