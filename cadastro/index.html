@@ -544,6 +544,7 @@ async function createAccount() {
 
   if (!ownerName || !email || !zap || !pass) { alert('Preencha todos os campos.'); return }
   if (zap.length < 10 || zap.length > 13) { alert('Digite um WhatsApp válido, com DDD. Ex.: 11 99999-9999'); return }
+  if (nasc && nasc >= new Date().toISOString().slice(0, 10)) { alert('Confira sua data de nascimento — ela não pode ser hoje nem uma data futura.'); return }
   if (pass.length < 6) { alert('Senha deve ter pelo menos 6 caracteres.'); return }
 
   const btn = document.getElementById('btnCriar')
