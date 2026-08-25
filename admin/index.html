@@ -413,6 +413,7 @@ function renderClients() {
       <span class="plan-pill plan-${c.plan}">${c.plan}</span>
       <span class="status-pill status-${c.status}">${statusLabel(c.status)}</span>
       <div class="client-actions">
+        <button class="action-btn" onclick="verAgendamentos('${c.id}')">📊 Agendamentos</button>
         <a class="link-btn" href="/?barbearia=${c.slug}" target="_blank">Ver página ↗</a>
         <a class="link-btn" href="/admin/cartao.html?slug=${c.slug}" target="_blank">💳 Cartão</a>
         ${c.status === 'active'
@@ -423,6 +424,58 @@ function renderClients() {
         <button class="action-btn" onclick="openSetPass('${c.id}')">🔒 Definir senha</button>
       </div>
     </div>`).join('')
+}
+
+// ── Detalhe dos agendamentos de um cliente ──
+async function verAgendamentos(id) {
+  const c = clients.find(x => x.id === id)
+  if (!c) return
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'bkModal'
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:520px;width:94%;">
+      <div class="modal-title">📊 Agendamentos — ${c.name}</div>
+      <div id="bkModalBody" style="max-height:60vh;overflow-y:auto;font-size:13.5px;">
+        <div style="color:var(--ink-2);padding:14px 0;">Carregando…</div>
+      </div>
+      <div class="modal-actions" style="margin-top:14px;">
+        <button class="action-btn" style="flex:1;" onclick="document.getElementById('bkModal').remove()">Fechar</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+
+  const bodyEl = document.getElementById('bkModalBody')
+  try {
+    const { data: { session } } = await db.auth.getSession()
+    const r = await fetch('/api/admin-bookings?shop=' + id, { headers: { 'Authorization': 'Bearer ' + (session?.access_token || '') } })
+    const d = await r.json()
+    const bks = d.bookings || []
+    if (!bks.length) {
+      bodyEl.innerHTML = '<div style="color:var(--ink-2);padding:14px 0;">Nenhum agendamento ainda. Esse cliente pode estar precisando de uma força pra divulgar o link. 📣</div>'
+      return
+    }
+    const hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10)
+    const fmtD = dt => dt.slice(8, 10) + '/' + dt.slice(5, 7)
+    const stCor = { confirmed: '#4ade80', completed: '#94A3B8', cancelled: '#f87171', no_show: '#fbbf24' }
+    const stTxt = { confirmed: 'Confirmado', completed: 'Concluído', cancelled: 'Cancelado', no_show: 'Faltou' }
+    const linha = b => `
+      <div style="display:flex;gap:10px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--border);">
+        <div style="font-weight:700;white-space:nowrap;">${fmtD(b.date)} ${String(b.start_time).slice(0, 5)}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${b.client_name}</div>
+          <div style="color:var(--ink-2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">✂️ ${b.services?.name || '—'}${b.barbers?.name ? ' · 💇 ' + b.barbers.name : ''}</div>
+        </div>
+        <div style="font-size:11.5px;font-weight:700;color:${stCor[b.status] || 'var(--ink-2)'};white-space:nowrap;">${stTxt[b.status] || b.status}</div>
+      </div>`
+    const futuros = bks.filter(b => b.date >= hoje).sort((a, z) => (a.date + a.start_time).localeCompare(z.date + z.start_time))
+    const passados = bks.filter(b => b.date < hoje)
+    bodyEl.innerHTML =
+      (futuros.length ? `<div style="font-weight:800;color:var(--primary);margin:4px 0 2px;">Próximos (${futuros.length})</div>` + futuros.map(linha).join('') : '') +
+      (passados.length ? `<div style="font-weight:800;color:var(--ink-2);margin:14px 0 2px;">Anteriores (${passados.length})</div>` + passados.map(linha).join('') : '')
+  } catch (e) {
+    bodyEl.innerHTML = '<div style="color:#f87171;padding:14px 0;">Erro ao carregar. Tenta de novo.</div>'
+  }
 }
 
 function statusLabel(s) {

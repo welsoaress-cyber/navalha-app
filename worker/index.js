@@ -18,6 +18,7 @@ export default {
       if (url.pathname === '/api/trial-activate' && request.method === 'POST') return await trialActivate(request, env)
       if (url.pathname === '/api/trial-invite' && request.method === 'POST') return await trialInvite(request, env)
       if (url.pathname === '/api/admin-stats') return await adminStats(request, env)
+      if (url.pathname === '/api/admin-bookings') return await adminBookings(request, env, url)
       if (url.pathname.startsWith('/late/')) return await latePage(url.pathname.slice(6).split('/')[0], env)
       if (url.pathname === '/api/late-act' && request.method === 'POST') return await lateAct(request, env)
       if (url.pathname === '/api/cards-pix' && request.method === 'POST') return await cardsPix(request, env)
@@ -260,6 +261,21 @@ async function adminStats(request, env) {
     if (b.date >= hoje && b.status === 'confirmed') s.futuros++
   }
   return json({ stats })
+}
+
+// Detalhe dos agendamentos de uma barbearia pro painel admin
+async function adminBookings(request, env, url) {
+  if (!env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
+  if (!(await adminOk(request, env))) return json({ error: 'forbidden' }, 403)
+  const shopId = url.searchParams.get('shop') || ''
+  if (!/^[a-f0-9-]{36}$/.test(shopId)) return json({ error: 'bad_request' }, 400)
+  const r = await fetch(env.SUPABASE_URL + '/rest/v1/bookings?barbershop_id=eq.' + shopId +
+    '&status=neq.blocked&select=date,start_time,client_name,client_phone,status,services(name),barbers(name)' +
+    '&order=date.desc,start_time.desc', {
+    headers: { ...sbHeaders(env), Range: '0-199' }
+  })
+  const rows = await r.json()
+  return json({ bookings: Array.isArray(rows) ? rows : [] })
 }
 
 // Gera um convite novo — só o admin logado consegue (valida o token da sessão Supabase)
