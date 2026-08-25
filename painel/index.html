@@ -345,6 +345,7 @@ async function loadBookings(date) {
         <div class="booking-actions">
           <button class="action-btn done" onclick="updateStatus('${bk.id}','completed')">✓ Concluído</button>
           <button class="action-btn cancel" onclick="updateStatus('${bk.id}','no_show')">Faltou</button>
+          <button class="action-btn cancel" onclick="cancelBooking('${bk.id}')">✕ Cancelar</button>
         </div>` : ''}
     `
     list.appendChild(el)
@@ -361,6 +362,30 @@ function changeDate(d) {
   if (inp) inp.value = d
   loadBookings(d)
   loadWeekOverview()
+}
+
+// Cancela e abre o WhatsApp com a mensagem pronta para o cliente
+async function cancelBooking(id) {
+  const { data: bk } = await db.from('bookings')
+    .select('*, services(name)')
+    .eq('id', id).maybeSingle()
+  if (!bk) return
+  if (!confirm(`Cancelar o horário de ${bk.client_name} às ${bk.start_time.slice(0,5)}?\n\nDepois de confirmar, vamos abrir o WhatsApp com a mensagem pronta para avisar o cliente.`)) return
+
+  await db.from('bookings').update({ status: 'cancelled' }).eq('id', id)
+  loadBookings(selectedDate)
+  loadWeekOverview()
+
+  const [ano, mes, dia] = bk.date.split('-')
+  const linkApp = `https://${shop.slug}.navalhanobigode.com.br`
+  const msg = encodeURIComponent(
+    `Olá, ${bk.client_name}! Aqui é da ${shop.name}. 💈\n\n` +
+    `Infelizmente precisei desmarcar seu horário de ${dia}/${mes} às ${bk.start_time.slice(0,5)}` +
+    `${bk.services?.name ? ' (' + bk.services.name + ')' : ''} por um imprevisto. Me desculpe!\n\n` +
+    `Você pode escolher um novo horário por aqui: ${linkApp}`
+  )
+  const phone = String(bk.client_phone || '').replace(/\D/g, '')
+  if (phone) window.open(`https://wa.me/55${phone}?text=${msg}`, '_blank')
 }
 
 async function updateStatus(id, status) {
