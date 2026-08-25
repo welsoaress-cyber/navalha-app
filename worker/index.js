@@ -16,6 +16,8 @@ export default {
       if (url.pathname === '/api/pix' && request.method === 'POST') return await createPix(request, env)
       if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
       if (url.pathname === '/api/notify' && request.method === 'POST') return await notify(request, env)
+      if (url.pathname === '/api/cascade' && request.method === 'POST') return await cascadeStart(request, env)
+      if (url.pathname === '/api/offer') return await offerAnswer(url, env)
       if (url.pathname === '/api/pix-status') return await pixStatus(url, env)
       if (url.pathname === '/api/mp-webhook') return await mpWebhook(request, url, env)
     } catch (e) {
@@ -26,6 +28,7 @@ export default {
 
   async scheduled(event, env) {
     await sendReminders(env)
+    await processExpiredOffers(env)
   }
 }
 
@@ -286,6 +289,132 @@ async function sendReminders(env) {
         body: JSON.stringify({ reminder_sent: new Date().toISOString() })
       })
     }
+  }
+}
+
+// ── Efeito cascata: oferece vaga liberada a quem tem horário mais tarde ──
+function minutos(t) { const [h, m] = String(t).split(':').map(Number); return h * 60 + m }
+function horaStr(min) { return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}` }
+
+async function sb(env, path, init = {}) {
+  const r = await fetch(env.SUPABASE_URL + '/rest/v1/' + path, {
+    ...init,
+    headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': init.method ? 'return=representation' : undefined, ...(init.headers || {}) }
+  })
+  try { return await r.json() } catch { return null }
+}
+
+// Oferece a janela liberada ao próximo da fila (a partir de afterTime)
+async function offerNext(env, win, afterTime) {
+  const candidatos = await sb(env,
+    `bookings?barber_id=eq.${win.barber_id}&date=eq.${win.date}&status=eq.confirmed` +
+    `&start_time=gt.${afterTime}&select=*,services(name),barbershops(name,slug)&order=start_time.asc`)
+  if (!Array.isArray(candidatos)) return
+
+  const freedLen = minutos(win.slot_end) - minutos(win.slot_start)
+  for (const cand of candidatos) {
+    const dur = minutos(cand.end_time) - minutos(cand.start_time)
+    if (dur > freedLen) continue // serviço não cabe na janela
+
+    const [offer] = await sb(env, 'slot_offers', {
+      method: 'POST',
+      body: JSON.stringify({
+        barbershop_id: win.barbershop_id, barber_id: win.barber_id,
+        date: win.date, slot_start: win.slot_start, slot_end: win.slot_end,
+        booking_id: cand.id,
+        status: 'pending',
+        expires_at: new Date(Date.now() + 45 * 60 * 1000).toISOString()
+      })
+    }) || []
+    if (!offer) return
+
+    const shop = cand.barbershops || {}
+    const base = `https://navalha-app.welsoaress.workers.dev/api/offer?t=${offer.token}`
+    const text =
+      `Olá, ${cand.client_name}! Aqui é da ${shop.name}. 💈\n\n` +
+      `Abriu um horário mais cedo no dia ${fmtData(win.date)}: *${String(win.slot_start).slice(0,5)}* ` +
+      `(você está marcado para ${String(cand.start_time).slice(0,5)}).\n\n` +
+      `Quer antecipar?\n\n` +
+      `✅ Sim, antecipar: ${base}&a=sim\n` +
+      `🙅 Manter meu horário: ${base}&a=nao\n\n` +
+      `(oferta válida por 45 minutos)`
+    await evoSend(env, cand.client_phone, text)
+    return // uma oferta por vez; o resto acontece via resposta ou expiração
+  }
+}
+
+async function cascadeStart(request, env) {
+  if (!env.SUPABASE_SERVICE_KEY) return json({ ok: false })
+  let body
+  try { body = await request.json() } catch { return json({ error: 'bad_request' }, 400) }
+  const bk = await loadBookingFull(env, body.booking_id)
+  if (!bk) return json({ ok: false })
+  await offerNext(env, {
+    barbershop_id: bk.barbershop_id, barber_id: bk.barber_id,
+    date: bk.date, slot_start: bk.start_time, slot_end: bk.end_time
+  }, bk.start_time)
+  return json({ ok: true })
+}
+
+async function offerAnswer(url, env) {
+  const token = url.searchParams.get('t')
+  const resposta = url.searchParams.get('a')
+  const page = (titulo, texto) => new Response(
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+     <body style="font-family:Arial;background:#0F172A;color:#F8FAFC;display:flex;align-items:center;justify-content:center;min-height:100dvh;margin:0;padding:24px;text-align:center;">
+     <div><div style="font-size:44px;margin-bottom:12px;">💈</div><h2 style="color:#D4A843;margin:0 0 10px;">${titulo}</h2><p style="color:#94A3B8;font-size:15px;line-height:1.6;">${texto}</p></div></body>`,
+    { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+
+  if (!token) return page('Link inválido', 'Confira o link recebido no WhatsApp.')
+  const [offer] = await sb(env, `slot_offers?token=eq.${token}&select=*`) || []
+  if (!offer) return page('Oferta não encontrada', 'Este link não é mais válido.')
+  if (offer.status !== 'pending') return page('Oferta encerrada', 'Essa vaga já foi resolvida. Seu horário original continua valendo.')
+  if (new Date(offer.expires_at) < new Date()) {
+    await sb(env, `slot_offers?id=eq.${offer.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'expired' }) })
+    return page('Oferta expirada', 'O prazo de 45 minutos passou. Seu horário original continua valendo.')
+  }
+
+  const bk = await loadBookingFull(env, offer.booking_id)
+  if (!bk || bk.status !== 'confirmed') return page('Oferta encerrada', 'Seu agendamento mudou desde a oferta.')
+
+  if (resposta === 'sim') {
+    // Move o horário do cliente para a vaga liberada
+    const dur = minutos(bk.end_time) - minutos(bk.start_time)
+    const oldWin = { barbershop_id: bk.barbershop_id, barber_id: bk.barber_id, date: bk.date, slot_start: bk.start_time, slot_end: bk.end_time }
+    await sb(env, `bookings?id=eq.${bk.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ start_time: offer.slot_start, end_time: horaStr(minutos(offer.slot_start) + dur) })
+    })
+    await sb(env, `slot_offers?id=eq.${offer.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'accepted' }) })
+    const shop = bk.barbershops || {}
+    await evoSend(env, bk.client_phone,
+      `✅ Prontinho, ${bk.client_name}! Seu horário na ${shop.name} foi antecipado para *${String(offer.slot_start).slice(0,5)}* do dia ${fmtData(bk.date)}. Até lá! 💈`)
+    // A vaga antiga dele abre → cascata continua
+    await offerNext(env, oldWin, oldWin.slot_start)
+    return page('Horário antecipado! ✅', `Seu novo horário é ${String(offer.slot_start).slice(0,5)} do dia ${fmtData(bk.date)}. Enviamos a confirmação no seu WhatsApp.`)
+  }
+
+  // Recusou: oferece ao próximo da fila
+  await sb(env, `slot_offers?id=eq.${offer.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'declined' }) })
+  await offerNext(env, {
+    barbershop_id: offer.barbershop_id, barber_id: offer.barber_id,
+    date: offer.date, slot_start: offer.slot_start, slot_end: offer.slot_end
+  }, bk.start_time)
+  return page('Tudo certo! 👍', `Seu horário das ${String(bk.start_time).slice(0,5)} continua valendo. Obrigado por avisar!`)
+}
+
+// Ofertas que venceram sem resposta passam para o próximo da fila
+async function processExpiredOffers(env) {
+  if (!env.SUPABASE_SERVICE_KEY) return
+  const vencidas = await sb(env, `slot_offers?status=eq.pending&expires_at=lt.${new Date().toISOString()}&select=*`)
+  if (!Array.isArray(vencidas)) return
+  for (const offer of vencidas) {
+    await sb(env, `slot_offers?id=eq.${offer.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'expired' }) })
+    const bk = await loadBookingFull(env, offer.booking_id)
+    await offerNext(env, {
+      barbershop_id: offer.barbershop_id, barber_id: offer.barber_id,
+      date: offer.date, slot_start: offer.slot_start, slot_end: offer.slot_end
+    }, bk ? bk.start_time : offer.slot_start)
   }
 }
 

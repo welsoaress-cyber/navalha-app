@@ -394,6 +394,14 @@ async function cancelBooking(id) {
   loadBookings(selectedDate)
   loadWeekOverview()
 
+  // Vaga liberada: dispara o efeito cascata (oferece antecipação a quem vem depois)
+  if (!manterFechado) {
+    fetch('/api/cascade', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ booking_id: id })
+    }).catch(() => {})
+  }
+
   // Aviso automático no WhatsApp do cliente; se falhar, abre o manual
   try {
     const r = await fetch('/api/notify', {
