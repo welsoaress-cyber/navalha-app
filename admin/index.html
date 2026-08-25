@@ -195,15 +195,15 @@ async function adminLogout() {
   initAdmin()
 }
 
-// ── Convidar barbeiro: abre o WhatsApp dele com a mensagem de venda pronta ──
-function conviteTexto(nome) {
+// ── Convidar barbeiro: gera convite de USO ÚNICO e abre o WhatsApp dele com a mensagem pronta ──
+function conviteTexto(nome, trialUrl) {
   return `Fala${nome ? ', ' + nome : ''}! Tudo certo? 💈\n\n` +
     `Deixa eu te mostrar uma parada que eu lancei: um app de agendamento feito só pra barbearia.\n\n` +
     `Sua barbearia ganha um link próprio, o cliente marca o horário sozinho pelo celular — e um robô no WhatsApp confirma na hora, manda lembrete antes do corte e, se alguém desmarcar, oferece a vaga pro próximo cliente no mesmo minuto. Toda segunda ele ainda te manda o resumo da semana: quantos cortes, quanto entrou e qual corte mais saiu.\n\n` +
     `Quer ver funcionando? Agenda um teste aqui com o SEU WhatsApp — o robô te responde na hora:\n` +
     `https://demo.navalhanobigode.com.br\n\n` +
-    `E se curtir, cria a SUA de graça: esse link te dá *10 dias de teste grátis* com seus clientes de verdade, sem pagar nada agora (leva uns 10 minutos e sai com o link pronto pra mandar pros clientes):\n` +
-    `https://cadastro.navalhanobigode.com.br/?teste=navalha10\n\n` +
+    `E se curtir, cria a SUA de graça: esse link é um convite pessoal, só seu, que te dá *10 dias de teste grátis* com seus clientes de verdade, sem pagar nada agora (leva uns 10 minutos e sai com o link pronto pra mandar pros clientes):\n` +
+    `${trialUrl}\n\n` +
     `Depois do teste, se quiser ficar, é R$ 99/mês, sem fidelidade e com garantia de 30 dias.\n\n` +
     `Me fala o que achou!`
 }
@@ -227,14 +227,14 @@ function openConvite() {
       <div id="cvErr" style="display:none;color:var(--red);font-size:13px;margin-bottom:10px;"></div>
       <div class="modal-actions">
         <button class="action-btn" style="flex:1;" onclick="document.getElementById('conviteModal').remove()">Cancelar</button>
-        <button class="btn-add" style="flex:1;" onclick="enviarConvite()">Abrir WhatsApp</button>
+        <button class="btn-add" style="flex:1;" id="cvSend" onclick="enviarConvite()">Abrir WhatsApp</button>
       </div>
     </div>`
   document.body.appendChild(overlay)
   document.getElementById('cvZap').focus()
 }
 
-function enviarConvite() {
+async function enviarConvite() {
   const nome = document.getElementById('cvNome').value.trim()
   let zap = document.getElementById('cvZap').value.replace(/\D/g, '')
   const errEl = document.getElementById('cvErr')
@@ -244,8 +244,27 @@ function enviarConvite() {
     errEl.textContent = 'Número inválido. Use DDD + número (10 ou 11 dígitos).'
     errEl.style.display = 'block'; return
   }
-  window.open('https://wa.me/' + zap + '?text=' + encodeURIComponent(conviteTexto(nome)), '_blank')
-  document.getElementById('conviteModal').remove()
+  const btn = document.getElementById('cvSend')
+  btn.disabled = true; btn.textContent = 'Gerando convite…'
+  try {
+    const { data: { session } } = await db.auth.getSession()
+    const r = await fetch('/api/trial-invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (session?.access_token || '') },
+      body: JSON.stringify({ label: nome || zap })
+    })
+    const d = await r.json()
+    if (!r.ok || !d.ok) throw new Error(d.error || 'não gerou')
+    const waUrl = 'https://wa.me/' + zap + '?text=' + encodeURIComponent(conviteTexto(nome, d.url))
+    const w = window.open(waUrl, '_blank')
+    if (w) { document.getElementById('conviteModal').remove(); return }
+    // Popup bloqueado: vira um link pra tocar
+    btn.outerHTML = `<a class="btn-add" style="flex:1;text-align:center;text-decoration:none;" href="${waUrl}" target="_blank" onclick="document.getElementById('conviteModal').remove()">📱 Abrir WhatsApp</a>`
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Abrir WhatsApp'
+    errEl.textContent = 'Erro ao gerar o convite: ' + e.message + ' — tenta de novo.'
+    errEl.style.display = 'block'
+  }
 }
 
 const PLAN_CONFIG = {

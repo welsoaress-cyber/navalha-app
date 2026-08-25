@@ -92,6 +92,20 @@ create table if not exists public.booking_changes (
 );
 
 -- ----------------------------------------
+-- CONVITES DE TESTE GRÁTIS (uso único)
+-- Sem policy pública: só o Worker (service key) lê e grava.
+-- ----------------------------------------
+create table if not exists public.trial_invites (
+  id          uuid default gen_random_uuid() primary key,
+  created_at  timestamptz default now(),
+  code        text unique not null,
+  label       text,                                          -- nome/zap do barbeiro convidado
+  used_at     timestamptz,
+  used_by     uuid references public.barbershops(id)
+);
+alter table public.trial_invites enable row level security;
+
+-- ----------------------------------------
 -- ROW LEVEL SECURITY
 -- ----------------------------------------
 alter table public.barbershops    enable row level security;

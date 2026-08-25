@@ -409,7 +409,14 @@ async function loadBookings(date) {
   container.innerHTML = '<div class="bookings-list" id="bList"></div>'
   const list = document.getElementById('bList')
 
+  // Cliente atrasado: horário de hoje que já passou e segue "confirmado"
+  const agoraBR = new Date(Date.now() - 3 * 3600 * 1000)
+  const minAgora = agoraBR.getUTCHours() * 60 + agoraBR.getUTCMinutes()
+  const ehHoje = selectedDate === hojeBR()
+
   bookings.forEach(bk => {
+    const [bh, bm] = String(bk.start_time).split(':').map(Number)
+    const atrasado = ehHoje && bk.status === 'confirmed' && (bh * 60 + bm) < minAgora
     const el = document.createElement('div')
     el.className = 'booking-card'
     el.id = `bk-${bk.id}`
@@ -424,6 +431,7 @@ async function loadBookings(date) {
       <span class="status-pill status-${bk.status}">${statusLabel(bk.status)}</span>
       ${bk.status === 'confirmed' ? `
         <div class="booking-actions">
+          ${atrasado ? `<button class="action-btn" id="late-${bk.id}" style="border-color:rgba(212,168,67,0.5);color:var(--gold);" onclick="askComing('${bk.id}')">🕐 Tá vindo?</button>` : ''}
           <button class="action-btn done" onclick="updateStatus('${bk.id}','completed')">✓ Concluído</button>
           <button class="action-btn cancel" onclick="updateStatus('${bk.id}','no_show')">Faltou</button>
           <button class="action-btn cancel" onclick="cancelBooking('${bk.id}')">✕ Cancelar</button>
@@ -431,6 +439,22 @@ async function loadBookings(date) {
     `
     list.appendChild(el)
   })
+}
+
+// Cliente atrasado: robô pergunta no WhatsApp se ele está a caminho
+async function askComing(id) {
+  const btn = document.getElementById('late-' + id)
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…' }
+  try {
+    const r = await fetch('/api/notify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ booking_id: id, type: 'late_check' })
+    })
+    const d = await r.json()
+    if (btn) btn.textContent = d.sent ? '✅ Perguntado' : '📵 Não enviou'
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '🕐 Tá vindo?' }
+  }
 }
 
 function statusLabel(s) {

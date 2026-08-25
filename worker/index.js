@@ -16,6 +16,7 @@ export default {
       if (url.pathname === '/api/pix' && request.method === 'POST') return await createPix(request, env)
       if (url.pathname === '/api/renew-pix' && request.method === 'POST') return await renewPix(request, env)
       if (url.pathname === '/api/trial-activate' && request.method === 'POST') return await trialActivate(request, env)
+      if (url.pathname === '/api/trial-invite' && request.method === 'POST') return await trialInvite(request, env)
       if (url.pathname === '/pagar') return await payPage(request, env)
       if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
       if (url.pathname === '/api/notify' && request.method === 'POST') return await notify(request, env)
@@ -161,22 +162,68 @@ async function activate(env, shopId) {
   })
 }
 
-// ── Teste grátis de 10 dias (convite do canal direto — exige o código do convite) ──
+// ── Teste grátis de 10 dias (convite do canal direto — código de USO ÚNICO) ──
+// Cada convite é gerado pelo admin (/api/trial-invite), vale uma vez e morre ao ser usado.
 // Ao fim do teste, a cobrança normal assume: aviso 3 dias antes, bloqueio no vencimento.
-const TRIAL_CODE = 'navalha10'
 const TRIAL_DAYS = 10
+const ADMIN_EMAIL = 'welsoaress@gmail.com'
+
+// Gera um convite novo — só o admin logado consegue (valida o token da sessão Supabase)
+async function trialInvite(request, env) {
+  if (!env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
+  const auth = request.headers.get('Authorization') || ''
+  if (!auth.startsWith('Bearer ')) return json({ error: 'forbidden' }, 403)
+  const ur = await fetch(env.SUPABASE_URL + '/auth/v1/user', {
+    headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: auth }
+  })
+  if (!ur.ok) return json({ error: 'forbidden' }, 403)
+  const u = await ur.json()
+  if ((u.email || '').toLowerCase() !== ADMIN_EMAIL) return json({ error: 'forbidden' }, 403)
+
+  let body = {}
+  try { body = await request.json() } catch {}
+  const alfabeto = 'abcdefghjkmnpqrstuvwxyz23456789'
+  const code = Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => alfabeto[b % alfabeto.length]).join('')
+  const ins = await fetch(env.SUPABASE_URL + '/rest/v1/trial_invites', {
+    method: 'POST',
+    headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+    body: JSON.stringify({ code, label: String(body.label || '').slice(0, 80) })
+  })
+  if (!ins.ok) return json({ error: 'insert_failed' }, 500)
+  return json({ ok: true, code, url: 'https://cadastro.navalhanobigode.com.br/?teste=' + code })
+}
+
 async function trialActivate(request, env) {
   if (!env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
   let body
   try { body = await request.json() } catch { return json({ error: 'bad_request' }, 400) }
-  if (!body.barbershop_id || body.code !== TRIAL_CODE) return json({ error: 'forbidden' }, 403)
+  if (!body.barbershop_id || !body.code) return json({ error: 'forbidden' }, 403)
 
   const r = await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(body.barbershop_id) +
     '&select=id,slug,name,status,next_due,owner_phone', { headers: sbHeaders(env) })
   const rows = await r.json()
   const shop = Array.isArray(rows) ? rows[0] : null
   if (!shop) return json({ error: 'not_found' }, 404)
+  // Reload da tela final depois de já ativado: responde sucesso, sem gastar outro convite
+  if (shop.status === 'active' && shop.next_due) return json({ ok: true, next_due: shop.next_due })
   if (shop.status === 'active' || shop.next_due) return json({ error: 'already_active' }, 409)
+
+  // Convite de uso único: precisa existir e nunca ter sido usado
+  const code = String(body.code).trim().toLowerCase()
+  const ir = await fetch(env.SUPABASE_URL + '/rest/v1/trial_invites?code=eq.' + encodeURIComponent(code) +
+    '&select=id,used_at', { headers: sbHeaders(env) })
+  const invs = await ir.json()
+  const inv = Array.isArray(invs) ? invs[0] : null
+  if (!inv || inv.used_at) return json({ error: 'invalid_invite' }, 403)
+
+  // Marca como usado ANTES de ativar (guarda used_at is null evita corrida/duplo uso)
+  const mark = await fetch(env.SUPABASE_URL + '/rest/v1/trial_invites?id=eq.' + inv.id + '&used_at=is.null', {
+    method: 'PATCH',
+    headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+    body: JSON.stringify({ used_at: new Date().toISOString(), used_by: shop.id })
+  })
+  const marked = await mark.json()
+  if (!Array.isArray(marked) || !marked.length) return json({ error: 'invalid_invite' }, 403)
 
   const trialUntil = addDays(todayBR(), TRIAL_DAYS)
   await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(shop.id) + '&status=neq.active', {
@@ -573,6 +620,8 @@ async function notify(request, env) {
     }
   } else if (body.type === 'booking_done') {
     text = `💈 *${shop.name}*\n\nObrigado pela visita, ${bk.client_name}! ✂️✨\nEsperamos que tenha ficado no capricho.\n\nQuando precisar, é só agendar de novo: ${link}\n\nAté a próxima! 🤝`
+  } else if (body.type === 'late_check') {
+    text = `💈 *${shop.name}*\n\nFala, ${bk.client_name}! Seu horário era às *${hora}* e estamos aqui te esperando. 🙏\n\nVocê está vindo?\n\nSe não conseguir chegar hoje, sem problema — é só remarcar por aqui: ${link}`
   } else if (body.type === 'cancel_by_shop') {
     text = `Olá, ${bk.client_name}! Aqui é da ${shop.name}. 💈\n\nInfelizmente precisei desmarcar seu horário de ${fmtData(bk.date)} às ${hora}${bk.services?.name ? ' (' + bk.services.name + ')' : ''} por um imprevisto. Me desculpe!\n\nVocê pode escolher um novo horário por aqui: ${link}`
   }
