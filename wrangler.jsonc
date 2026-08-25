@@ -4,7 +4,10 @@
   "compatibility_date": "2025-03-01",
   "assets": {
     "directory": "./",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // Na raiz, o Worker precisa rodar antes do arquivo estático,
+    // senão o redirecionamento de cadastro.navalhanobigode.com.br nunca executa
+    "run_worker_first": ["/", "/index.html"]
   },
   "vars": {
     "SUPABASE_URL": "https://txmdehfleltpqokhyzex.supabase.co",
