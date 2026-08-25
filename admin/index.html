@@ -195,17 +195,22 @@ async function adminLogout() {
   initAdmin()
 }
 
-// ── Convidar barbeiro: gera convite de USO ÚNICO e abre o WhatsApp dele com a mensagem pronta ──
-function conviteTexto(nome, trialUrl) {
-  return `Fala${nome ? ', ' + nome : ''}! Tudo certo? 💈\n\n` +
-    `Deixa eu te mostrar uma parada que eu lancei: um app de agendamento feito só pra barbearia.\n\n` +
-    `Sua barbearia ganha um link próprio, o cliente marca o horário sozinho pelo celular — e um robô no WhatsApp confirma na hora, manda lembrete antes do corte e, se alguém desmarcar, oferece a vaga pro próximo cliente no mesmo minuto. Toda segunda ele ainda te manda o resumo da semana: quantos cortes, quanto entrou e qual corte mais saiu.\n\n` +
-    `Quer ver funcionando? Agenda um teste aqui com o SEU WhatsApp — o robô te responde na hora:\n` +
-    `https://demo.navalhanobigode.com.br\n\n` +
-    `E se curtir, cria a SUA de graça: esse link é um convite pessoal, só seu, que te dá *10 dias de teste grátis* com seus clientes de verdade, sem pagar nada agora (leva uns 10 minutos e sai com o link pronto pra mandar pros clientes):\n` +
-    `${trialUrl}\n\n` +
-    `Depois do teste, se quiser ficar, é R$ 99/mês, sem fidelidade e com garantia de 30 dias.\n\n` +
-    `Me fala o que achou!`
+// ── Convidar barbeiro em 2 tempos: 1º contato curto (demo) e, quando ele topar, o teste (link único) ──
+function conviteTexto(nome) {
+  return `Fala${nome ? ', ' + nome : ''}! 💈\n\n` +
+    `Lancei um app de agendamento feito só pra barbearia — e lembrei de você.\n\n` +
+    `Teu cliente marca o horário sozinho pelo link. Um robô no WhatsApp cuida do resto: confirma, manda lembrete e preenche horário vago quando alguém desmarca.\n\n` +
+    `Vê funcionando — agenda um teste com o TEU WhatsApp e o robô te responde na hora:\n` +
+    `👉 https://demo.navalhanobigode.com.br\n\n` +
+    `Se curtir, te libero *10 dias grátis* na tua barbearia. É só me responder aqui 🤝`
+}
+
+function testeTexto(nome, trialUrl) {
+  return `Boa${nome ? ', ' + nome : ''}! 🤜🤛\n\n` +
+    `Teu convite pessoal — *10 dias grátis*, sem pagar nada agora:\n` +
+    `👉 ${trialUrl}\n\n` +
+    `Leva uns 10 minutos: escolhe o plano, cadastra serviços e horários, e já sai com o teu link pronto pra mandar pros clientes.\n\n` +
+    `Se depois quiser ficar, é a partir de R$ 99/mês. Não curtiu? É só deixar pra lá. 🤝`
 }
 
 function openConvite() {
@@ -222,19 +227,20 @@ function openConvite() {
       <div class="form-group">
         <label class="form-label">WhatsApp dele (com DDD)</label>
         <input class="form-input" id="cvZap" type="tel" placeholder="Ex.: 11 91234-5678" inputmode="tel">
-        <div class="form-hint">Abre o WhatsApp com a mensagem pronta: demo + oferta de 10 dias de teste. Você ainda pode editar antes de enviar.</div>
+        <div class="form-hint"><strong>1º contato</strong>: mensagem curta com a demo. <strong>Liberar teste</strong>: quando ele topar — gera o link único de 10 dias.</div>
       </div>
       <div id="cvErr" style="display:none;color:var(--red);font-size:13px;margin-bottom:10px;"></div>
       <div class="modal-actions">
         <button class="action-btn" style="flex:1;" onclick="document.getElementById('conviteModal').remove()">Cancelar</button>
-        <button class="btn-add" style="flex:1;" id="cvSend" onclick="enviarConvite()">Abrir WhatsApp</button>
+        <button class="action-btn" style="flex:1;" id="cvSendConvite" onclick="enviarConvite('convite')">📣 1º contato</button>
+        <button class="btn-add" style="flex:1;" id="cvSendTeste" onclick="enviarConvite('teste')">🎁 Liberar teste</button>
       </div>
     </div>`
   document.body.appendChild(overlay)
   document.getElementById('cvZap').focus()
 }
 
-async function enviarConvite() {
+async function enviarConvite(tipo) {
   const nome = document.getElementById('cvNome').value.trim()
   let zap = document.getElementById('cvZap').value.replace(/\D/g, '')
   const errEl = document.getElementById('cvErr')
@@ -244,27 +250,38 @@ async function enviarConvite() {
     errEl.textContent = 'Número inválido. Use DDD + número (10 ou 11 dígitos).'
     errEl.style.display = 'block'; return
   }
-  const btn = document.getElementById('cvSend')
-  btn.disabled = true; btn.textContent = 'Gerando convite…'
-  try {
-    const { data: { session } } = await db.auth.getSession()
-    const r = await fetch('/api/trial-invite', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (session?.access_token || '') },
-      body: JSON.stringify({ label: nome || zap })
-    })
-    const d = await r.json()
-    if (!r.ok || !d.ok) throw new Error(d.error || 'não gerou')
-    const waUrl = 'https://wa.me/' + zap + '?text=' + encodeURIComponent(conviteTexto(nome, d.url))
-    const w = window.open(waUrl, '_blank')
-    if (w) { document.getElementById('conviteModal').remove(); return }
-    // Popup bloqueado: vira um link pra tocar
-    btn.outerHTML = `<a class="btn-add" style="flex:1;text-align:center;text-decoration:none;" href="${waUrl}" target="_blank" onclick="document.getElementById('conviteModal').remove()">📱 Abrir WhatsApp</a>`
-  } catch (e) {
-    btn.disabled = false; btn.textContent = 'Abrir WhatsApp'
-    errEl.textContent = 'Erro ao gerar o convite: ' + e.message + ' — tenta de novo.'
-    errEl.style.display = 'block'
+  const btn = document.getElementById(tipo === 'teste' ? 'cvSendTeste' : 'cvSendConvite')
+  const rotulo = btn.textContent
+
+  let texto
+  if (tipo === 'teste') {
+    // Só aqui o convite de uso único é gerado — nada de código desperdiçado no 1º contato
+    btn.disabled = true; btn.textContent = 'Gerando…'
+    try {
+      const { data: { session } } = await db.auth.getSession()
+      const r = await fetch('/api/trial-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (session?.access_token || '') },
+        body: JSON.stringify({ label: nome || zap })
+      })
+      const d = await r.json()
+      if (!r.ok || !d.ok) throw new Error(d.error || 'não gerou')
+      texto = testeTexto(nome, d.url)
+    } catch (e) {
+      btn.disabled = false; btn.textContent = rotulo
+      errEl.textContent = 'Erro ao gerar o convite: ' + e.message + ' — tenta de novo.'
+      errEl.style.display = 'block'; return
+    }
+  } else {
+    texto = conviteTexto(nome)
   }
+
+  const waUrl = 'https://wa.me/' + zap + '?text=' + encodeURIComponent(texto)
+  const w = window.open(waUrl, '_blank')
+  if (w) { document.getElementById('conviteModal').remove(); return }
+  // Popup bloqueado: vira um link pra tocar
+  btn.disabled = false
+  btn.outerHTML = `<a class="btn-add" style="flex:1;text-align:center;text-decoration:none;" href="${waUrl}" target="_blank" onclick="document.getElementById('conviteModal').remove()">📱 Abrir WhatsApp</a>`
 }
 
 const PLAN_CONFIG = {
