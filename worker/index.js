@@ -19,6 +19,7 @@ export default {
       if (url.pathname === '/api/trial-invite' && request.method === 'POST') return await trialInvite(request, env)
       if (url.pathname === '/api/admin-stats') return await adminStats(request, env)
       if (url.pathname === '/api/admin-bookings') return await adminBookings(request, env, url)
+      if (url.pathname === '/api/admin-email' && request.method === 'POST') return await adminChangeEmail(request, env)
       if (url.pathname.startsWith('/late/')) return await latePage(url.pathname.slice(6).split('/')[0], env)
       if (url.pathname === '/api/late-act' && request.method === 'POST') return await lateAct(request, env)
       if (url.pathname === '/api/cards-pix' && request.method === 'POST') return await cardsPix(request, env)
@@ -261,6 +262,41 @@ async function adminStats(request, env) {
     if (b.date >= hoje && b.status === 'confirmed') s.futuros++
   }
   return json({ stats })
+}
+
+// Corrige o e-mail de um cliente (login + cadastro) — barbeiro digitou errado no cadastro
+async function adminChangeEmail(request, env) {
+  if (!env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
+  if (!(await adminOk(request, env))) return json({ error: 'forbidden' }, 403)
+  let body
+  try { body = await request.json() } catch { return json({ error: 'bad_request' }, 400) }
+  const shopId = body.barbershop_id || ''
+  const novo = String(body.new_email || '').trim().toLowerCase()
+  if (!/^[a-f0-9-]{36}$/.test(shopId) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(novo)) return json({ error: 'bad_request' }, 400)
+
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,owner_email`) || []
+  if (!shop) return json({ error: 'not_found' }, 404)
+  const antigo = (shop.owner_email || '').toLowerCase()
+
+  // Acha o usuário de login pelo e-mail antigo e atualiza direto no Auth (senha continua a mesma)
+  let authUpdated = false
+  if (antigo) {
+    const lr = await fetch(env.SUPABASE_URL + '/auth/v1/admin/users?per_page=1000', {
+      headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: 'Bearer ' + env.SUPABASE_SERVICE_KEY }
+    })
+    const ld = await lr.json()
+    const user = (ld.users || []).find(u => (u.email || '').toLowerCase() === antigo)
+    if (user) {
+      const ur = await fetch(env.SUPABASE_URL + '/auth/v1/admin/users/' + user.id, {
+        method: 'PUT',
+        headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: 'Bearer ' + env.SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: novo, email_confirm: true })
+      })
+      authUpdated = ur.ok
+    }
+  }
+  await sb(env, `barbershops?id=eq.${shopId}`, { method: 'PATCH', body: JSON.stringify({ owner_email: novo }) })
+  return json({ ok: true, auth_updated: authUpdated, old_email: antigo || null })
 }
 
 // Detalhe dos agendamentos de uma barbearia pro painel admin

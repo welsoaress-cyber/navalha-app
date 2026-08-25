@@ -424,10 +424,71 @@ function renderClients() {
           ? `<button class="action-btn suspend" onclick="toggleStatus('${c.id}','suspended')">Suspender</button>`
           : `<button class="action-btn activate" onclick="toggleStatus('${c.id}','active')">Reativar</button>`
         }
+        <button class="action-btn" onclick="openTrocaEmail('${c.id}')">✉️ Trocar e-mail</button>
         <button class="action-btn" id="reset-${c.id}" onclick="resetPass('${c.id}')">🔑 Reset senha</button>
         <button class="action-btn" onclick="openSetPass('${c.id}')">🔒 Definir senha</button>
       </div>
     </div>`).join('')
+}
+
+// ── Trocar e-mail do cliente (digitou errado no cadastro): corrige login + cadastro ──
+function openTrocaEmail(id) {
+  const c = clients.find(x => x.id === id)
+  if (!c) return
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'emailModal'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">✉️ Trocar e-mail — ${c.name}</div>
+      <div class="form-group">
+        <label class="form-label">E-mail atual (errado)</label>
+        <input class="form-input" value="${c.owner_email || '—'}" disabled style="opacity:0.6;">
+      </div>
+      <div class="form-group">
+        <label class="form-label">E-mail correto</label>
+        <input class="form-input" id="teNovo" type="email" placeholder="email@certo.com" autocomplete="off">
+        <div class="form-hint">Troca o login e o cadastro de uma vez. A senha continua a mesma.</div>
+      </div>
+      <div id="teErr" style="display:none;color:var(--red);font-size:13px;margin-bottom:10px;"></div>
+      <div class="modal-actions">
+        <button class="action-btn" style="flex:1;" onclick="document.getElementById('emailModal').remove()">Cancelar</button>
+        <button class="btn-add" style="flex:1;" id="teSave" onclick="salvarTrocaEmail('${c.id}')">Salvar</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+  document.getElementById('teNovo').focus()
+}
+
+async function salvarTrocaEmail(id) {
+  const novo = document.getElementById('teNovo').value.trim().toLowerCase()
+  const errEl = document.getElementById('teErr')
+  errEl.style.display = 'none'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(novo)) {
+    errEl.textContent = 'Digite um e-mail válido.'
+    errEl.style.display = 'block'; return
+  }
+  const btn = document.getElementById('teSave')
+  btn.disabled = true; btn.textContent = 'Salvando…'
+  try {
+    const { data: { session } } = await db.auth.getSession()
+    const r = await fetch('/api/admin-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (session?.access_token || '') },
+      body: JSON.stringify({ barbershop_id: id, new_email: novo })
+    })
+    const d = await r.json()
+    if (!r.ok || !d.ok) throw new Error(d.error || 'falhou')
+    document.getElementById('emailModal').remove()
+    alert(d.auth_updated
+      ? `✅ E-mail trocado!\n\nNovo login: ${novo}\nSenha: a mesma que a pessoa criou.\n\nAvisa o barbeiro no WhatsApp.`
+      : `✅ Cadastro atualizado para ${novo}.\n\n⚠️ Não achei a conta de login com o e-mail antigo — se o barbeiro não conseguir entrar, use "Definir senha" ou me chama.`)
+    loadClients()
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Salvar'
+    errEl.textContent = 'Erro: ' + e.message + ' — tenta de novo.'
+    errEl.style.display = 'block'
+  }
 }
 
 // ── Detalhe dos agendamentos de um cliente ──
