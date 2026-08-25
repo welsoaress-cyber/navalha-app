@@ -323,7 +323,7 @@ async function offerNext(env, win, afterTime) {
         date: win.date, slot_start: win.slot_start, slot_end: win.slot_end,
         booking_id: cand.id,
         status: 'pending',
-        expires_at: new Date(Date.now() + 45 * 60 * 1000).toISOString()
+        expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString()
       })
     }) || []
     if (!offer) return
@@ -337,7 +337,7 @@ async function offerNext(env, win, afterTime) {
       `Quer antecipar?\n\n` +
       `✅ Sim, antecipar: ${base}&a=sim\n` +
       `🙅 Manter meu horário: ${base}&a=nao\n\n` +
-      `(oferta válida por 45 minutos)`
+      `(oferta válida por 5 minutos ⏱)`
     await evoSend(env, cand.client_phone, text)
     return // uma oferta por vez; o resto acontece via resposta ou expiração
   }
@@ -371,7 +371,7 @@ async function offerAnswer(url, env) {
   if (offer.status !== 'pending') return page('Oferta encerrada', 'Essa vaga já foi resolvida. Seu horário original continua valendo.')
   if (new Date(offer.expires_at) < new Date()) {
     await sb(env, `slot_offers?id=eq.${offer.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'expired' }) })
-    return page('Oferta expirada', 'O prazo de 45 minutos passou. Seu horário original continua valendo.')
+    return page('Oferta expirada', 'O prazo de 5 minutos passou. Seu horário original continua valendo.')
   }
 
   const bk = await loadBookingFull(env, offer.booking_id)
@@ -394,8 +394,10 @@ async function offerAnswer(url, env) {
     return page('Horário antecipado! ✅', `Seu novo horário é ${String(offer.slot_start).slice(0,5)} do dia ${fmtData(bk.date)}. Enviamos a confirmação no seu WhatsApp.`)
   }
 
-  // Recusou: oferece ao próximo da fila
+  // Recusou: avisa e oferece ao próximo da fila
   await sb(env, `slot_offers?id=eq.${offer.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'declined' }) })
+  await evoSend(env, bk.client_phone,
+    `Tudo certo, ${bk.client_name}! A vaga das ${String(offer.slot_start).slice(0,5)} foi repassada. Seu horário das ${String(bk.start_time).slice(0,5)} continua confirmado. 💈`)
   await offerNext(env, {
     barbershop_id: offer.barbershop_id, barber_id: offer.barber_id,
     date: offer.date, slot_start: offer.slot_start, slot_end: offer.slot_end
@@ -411,6 +413,8 @@ async function processExpiredOffers(env) {
   for (const offer of vencidas) {
     await sb(env, `slot_offers?id=eq.${offer.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'expired' }) })
     const bk = await loadBookingFull(env, offer.booking_id)
+    if (bk) await evoSend(env, bk.client_phone,
+      `Olá, ${bk.client_name}! A vaga das ${String(offer.slot_start).slice(0,5)} foi preenchida. Seu horário das ${String(bk.start_time).slice(0,5)} continua confirmado. 💈`)
     await offerNext(env, {
       barbershop_id: offer.barbershop_id, barber_id: offer.barber_id,
       date: offer.date, slot_start: offer.slot_start, slot_end: offer.slot_end

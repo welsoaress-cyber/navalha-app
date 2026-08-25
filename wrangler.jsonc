@@ -12,6 +12,6 @@
     "EVOLUTION_INSTANCE": "servnet"
   },
   "triggers": {
-    "crons": ["*/10 * * * *"]
+    "crons": ["*/2 * * * *"]
   }
 }
