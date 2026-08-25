@@ -673,7 +673,22 @@ function renderConfirmation() {
           <span class="summary-value">${state.clientName}</span>
         </div>
       </div>
-      <button class="btn-primary" onclick="location.reload()">Fazer outro agendamento</button>
+      <button class="btn-primary" onclick="renderGoodbye()">Concluir ✓</button>
+      <button class="btn-primary" style="background:none;border:1.5px solid var(--border,#334155);color:inherit;margin-top:10px;" onclick="location.reload()">Fazer outro agendamento</button>
+    </div>`
+}
+
+function renderGoodbye() {
+  document.getElementById('main').innerHTML = `
+    <div style="padding-top:64px;text-align:center;">
+      <div class="confirm-icon">💈</div>
+      <div class="confirm-title">Até lá, ${state.clientName.split(' ')[0]}!</div>
+      <div class="confirm-sub">
+        Você vai receber a confirmação e um lembrete<br>no seu WhatsApp. Pode fechar esta página.
+      </div>
+      <div style="margin-top:28px;font-size:13px;color:#94A3B8;background:rgba(148,163,184,0.08);border-radius:12px;padding:14px 16px;max-width:320px;margin-left:auto;margin-right:auto;">
+        💡 <strong>Dica:</strong> toque no menu do navegador e escolha<br><strong>"Adicionar à tela inicial"</strong> para agendar<br>com um toque da próxima vez.
+      </div>
     </div>`
 }
 
