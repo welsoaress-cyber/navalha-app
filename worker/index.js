@@ -27,6 +27,12 @@ export default {
     } catch (e) {
       return json({ error: 'internal', detail: String(e) }, 500)
     }
+    // cadastro.navalhanobigode.com.br serve o cadastro direto na raiz (domínio bonito nos anúncios)
+    if (url.hostname === 'cadastro.navalhanobigode.com.br' && (url.pathname === '/' || url.pathname === '/index.html')) {
+      const u = new URL(request.url)
+      u.pathname = '/cadastro/'
+      return env.ASSETS.fetch(new Request(u, request))
+    }
     return env.ASSETS.fetch(request)
   },
 
