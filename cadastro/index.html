@@ -319,11 +319,11 @@
           <div class="access-hint">Senha: a que você criou no cadastro</div>
         </div>
       </div>
-      <div class="alert-box">
+      <div class="alert-box" id="boxPosPagto">
         ✅ <strong>Seu acesso já está liberado.</strong><br>
         Assim que o pagamento for confirmado, seu app fica ativo para os clientes agendarem.
       </div>
-      <div class="alert-box" style="background:rgba(212,168,67,0.08);border-color:rgba(212,168,67,0.25);">
+      <div class="alert-box" id="boxEmailCartoes" style="background:rgba(212,168,67,0.08);border-color:rgba(212,168,67,0.25);">
         📧 <strong>Enviamos um e-mail</strong> com seus acessos, o link do app e os primeiros passos — guarde ele.<br><br>
         💳 <strong>Seus cartões estão a caminho:</strong> você vai receber cartões com o QR Code da sua barbearia para distribuir aos clientes. A primeira remessa é por nossa conta — remessas adicionais são cobradas à parte.
       </div>
@@ -352,6 +352,19 @@ const params  = new URLSearchParams(location.search)
 let planKey = PLANS[params.get('plano')] ? params.get('plano') : 'equipe'
 let plan    = PLANS[planKey]
 let currentStep = 1
+
+// ── Convite de teste grátis (10 dias): cadastro sem pagamento, cobrança assume no fim ──
+const TRIAL_CODE = (params.get('teste') || '').trim()
+if (TRIAL_CODE) {
+  document.addEventListener('DOMContentLoaded', () => {
+    const s1 = document.getElementById('s1')
+    if (!s1) return
+    const b = document.createElement('div')
+    b.style.cssText = 'background:rgba(212,168,67,0.12);border:1px solid rgba(212,168,67,0.35);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:14px;color:#F0D080;font-weight:600;'
+    b.textContent = '🎁 Convite especial: 10 dias grátis pra testar com seus clientes de verdade — sem pagar nada agora.'
+    s1.insertBefore(b, s1.firstChild)
+  })
+}
 
 // ── Serviços coletados ──
 let services = []
@@ -590,8 +603,10 @@ async function createAccount() {
         document.getElementById('accEmail').textContent = email
         window._appLink = appLink2
         goStep(6)
-        startPix(existing.id)
-        renderCardPreview(existing.name, existing.primary_color || '#D4A843', existing.slug)
+        if (TRIAL_CODE) { startTrial(existing.id) } else {
+          startPix(existing.id)
+          renderCardPreview(existing.name, existing.primary_color || '#D4A843', existing.slug)
+        }
         return
       }
       // Conta existe mas sem barbearia: segue o fluxo normal e cria agora
@@ -653,10 +668,40 @@ async function createAccount() {
   window._appLink = appLink
 
   goStep(6)
-  startPix(shopId)
-  renderCardPreview(shopName, color, slug)
+  if (TRIAL_CODE) { startTrial(shopId) } else {
+    startPix(shopId)
+    renderCardPreview(shopName, color, slug)
+  }
   // E-mail de boas-vindas com orientações (não bloqueia o fluxo)
   fetch('/api/welcome', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: shopId }) }).catch(() => {})
+}
+
+// ── Teste grátis: ativa a barbearia sem pagamento (10 dias) ──
+async function startTrial(shopId) {
+  window._shopId = shopId
+  document.getElementById('payAuto').style.display = 'none'
+  const el = document.getElementById('payLoading')
+  el.style.display = 'block'
+  el.innerHTML = '<div class="pix-box"><div style="font-size:15px;color:#94A3B8;padding:20px 0;"><span class="spinner"></span> Ativando seu teste grátis…</div></div>'
+  try {
+    const r = await fetch('/api/trial-activate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: shopId, code: TRIAL_CODE }) })
+    const d = await r.json()
+    if (!r.ok || !d.ok) throw new Error(d.error || 'falhou')
+    const ateBr = d.next_due ? d.next_due.slice(8, 10) + '/' + d.next_due.slice(5, 7) : ''
+    document.querySelector('#s6 .step-title').textContent = '🎉 Teste grátis ativado!'
+    document.querySelector('#s6 .step-sub').textContent = 'Sua barbearia já está no ar — sem pagar nada agora.'
+    el.innerHTML = `<div class="pix-box">
+      <div style="font-size:36px;">🎁</div>
+      <div style="font-size:17px;color:#F8FAFC;font-weight:700;margin:8px 0 6px;">10 dias grátis ativados</div>
+      <div style="font-size:14px;color:#94A3B8;line-height:1.6;">Teste válido até <strong style="color:#D4A843;">${ateBr}</strong>. Copie o link abaixo e já manda pros seus clientes agendarem.<br><br>Perto do fim do teste eu te aviso no WhatsApp — se quiser ficar, é R$ ${plan.monthly}/mês direto no painel, <strong style="color:#F8FAFC;">sem taxa de adesão</strong>.</div>
+    </div>`
+    const bp = document.getElementById('boxPosPagto')
+    if (bp) bp.innerHTML = '✅ <strong>Tudo pronto e funcionando.</strong><br>O robô do WhatsApp já está cuidando da sua agenda.'
+    const bc = document.getElementById('boxEmailCartoes')
+    if (bc) bc.style.display = 'none'
+  } catch (e) {
+    el.innerHTML = '<div class="pix-box"><div style="font-size:14px;color:#f87171;padding:14px 0;">Não consegui ativar o teste automaticamente. Chama a gente no WhatsApp que ativamos na hora!</div><button class="btn-copy" onclick="startTrial(window._shopId)">🔄 Tentar novamente</button></div>'
+  }
 }
 
 // ── Conversões do Google Ads ──

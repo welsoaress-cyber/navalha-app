@@ -15,6 +15,7 @@ export default {
     try {
       if (url.pathname === '/api/pix' && request.method === 'POST') return await createPix(request, env)
       if (url.pathname === '/api/renew-pix' && request.method === 'POST') return await renewPix(request, env)
+      if (url.pathname === '/api/trial-activate' && request.method === 'POST') return await trialActivate(request, env)
       if (url.pathname === '/pagar') return await payPage(request, env)
       if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
       if (url.pathname === '/api/notify' && request.method === 'POST') return await notify(request, env)
@@ -158,6 +159,36 @@ async function activate(env, shopId) {
     headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
     body: JSON.stringify({ status: 'active', next_due: addMonths(todayBR(), 1) })
   })
+}
+
+// ── Teste grátis de 10 dias (convite do canal direto — exige o código do convite) ──
+// Ao fim do teste, a cobrança normal assume: aviso 3 dias antes, bloqueio no vencimento.
+const TRIAL_CODE = 'navalha10'
+const TRIAL_DAYS = 10
+async function trialActivate(request, env) {
+  if (!env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
+  let body
+  try { body = await request.json() } catch { return json({ error: 'bad_request' }, 400) }
+  if (!body.barbershop_id || body.code !== TRIAL_CODE) return json({ error: 'forbidden' }, 403)
+
+  const r = await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(body.barbershop_id) +
+    '&select=id,slug,name,status,next_due,owner_phone', { headers: sbHeaders(env) })
+  const rows = await r.json()
+  const shop = Array.isArray(rows) ? rows[0] : null
+  if (!shop) return json({ error: 'not_found' }, 404)
+  if (shop.status === 'active' || shop.next_due) return json({ error: 'already_active' }, 409)
+
+  const trialUntil = addDays(todayBR(), TRIAL_DAYS)
+  await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(shop.id) + '&status=neq.active', {
+    method: 'PATCH',
+    headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+    body: JSON.stringify({ status: 'active', next_due: trialUntil })
+  })
+  if (shop.owner_phone) {
+    await evoSend(env, shop.owner_phone,
+      `🎁 *Teste grátis ativado!*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem (manda no grupo, no status, em todo lugar):\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel (agenda e configurações):\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nSeu teste vale até *${fmtData(trialUntil)}*. A partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝`)
+  }
+  return json({ ok: true, next_due: trialUntil })
 }
 
 // ── Cobrança mensal via Pix ──
