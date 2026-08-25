@@ -179,6 +179,8 @@ async function renewPix(request, env) {
 
   const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,plan,owner_email,next_due,owner_birthday`) || []
   if (!shop) return json({ error: 'not_found' }, 404)
+  // Renovação só existe depois da adesão paga (senão daria pra ativar sem pagar o kit)
+  if (!shop.next_due) return json({ error: 'not_active' }, 409)
 
   const plan = PLANS[shop.plan] || PLANS.solo
   const { valor, aniver } = valorMensal(shop, plan)
@@ -348,6 +350,7 @@ async function payPage(request, env) {
 
   const [shop] = await sb(env, `barbershops?slug=eq.${slug}&select=id,name,plan,next_due,owner_birthday`) || []
   if (!shop) return offerHtml(offerMsg('Barbearia não encontrada', 'Confira o link recebido no WhatsApp.'))
+  if (!shop.next_due) return offerHtml(offerMsg('Cadastro ainda não concluído', 'Esta barbearia ainda não ativou o plano. Conclua o cadastro e o pagamento em navalhanobigode.com.br.'))
 
   const plan = PLANS[shop.plan] || PLANS.solo
   const { valor, aniver } = valorMensal(shop, plan)
