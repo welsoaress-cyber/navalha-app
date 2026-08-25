@@ -919,9 +919,9 @@ async function saveHours(barberId) {
   const btn = document.getElementById('hoursSave')
   btn.disabled = true; btn.textContent = 'Salvando…'
 
-  // O novo horário não pode atropelar agendamentos já confirmados
+  // Agendamentos confirmados que ficariam fora do novo horário
   const { data: futuros } = await db.from('bookings')
-    .select('date,start_time,client_name')
+    .select('id,date,start_time,client_name,client_phone')
     .eq('barber_id', barberId).eq('status', 'confirmed').gte('date', hojeBR())
   const conflitos = (futuros || []).filter(bk => {
     const dow = new Date(bk.date + 'T12:00:00').getDay()
@@ -930,14 +930,18 @@ async function saveHours(barberId) {
     const ini = String(bk.start_time).slice(0, 5)
     return ini < novo.start_time || ini >= novo.end_time
   })
+
   if (conflitos.length) {
     btn.disabled = false; btn.textContent = 'Salvar horários'
     const lista = conflitos.slice(0, 5)
-      .map(bk => `• ${dataBR(bk.date)} às ${String(bk.start_time).slice(0, 5)} — ${bk.client_name}`)
+      .map(bk => `${dataBR(bk.date)} às ${String(bk.start_time).slice(0, 5)} — ${bk.client_name}`)
       .join('<br>')
-    errEl.innerHTML = `⚠️ Esse horário novo deixaria cliente de fora:<br>${lista}${conflitos.length > 5 ? '<br>…e mais ' + (conflitos.length - 5) : ''}<br><br>Cancele ou conclua esses agendamentos primeiro — ao cancelar, o cliente é avisado automaticamente no WhatsApp.`
-    errEl.style.display = 'block'
-    return
+    const ok = await askConfirm(
+      `⚠️ <strong>${conflitos.length} agendamento${conflitos.length > 1 ? 's' : ''}</strong> fica${conflitos.length > 1 ? 'm' : ''} fora do novo horário:<br><br>` +
+      `${lista}${conflitos.length > 5 ? '<br>…e mais ' + (conflitos.length - 5) : ''}<br><br>` +
+      `Salvar mesmo assim? Esses clientes serão <strong>desmarcados e avisados no WhatsApp</strong> para escolher um novo horário.`)
+    if (!ok) return
+    btn.disabled = true; btn.textContent = 'Salvando…'
   }
 
   const { error: delErr } = await db.from('availability').delete().eq('barber_id', barberId)
@@ -954,6 +958,50 @@ async function saveHours(barberId) {
       errEl.style.display = 'block'; return
     }
   }
+
+  // Desmarca e avisa quem ficou fora do novo horário
+  if (conflitos.length) {
+    btn.textContent = 'Avisando clientes…'
+    const resultados = []
+    for (const bk of conflitos) {
+      const { error: cErr } = await db.from('bookings').update({ status: 'cancelled' }).eq('id', bk.id)
+      let avisado = false
+      if (!cErr) {
+        try {
+          const r = await fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ booking_id: bk.id, type: 'cancel_by_shop' }) })
+          const d = await r.json().catch(() => ({}))
+          avisado = !!d.sent
+        } catch (e) {}
+      }
+      resultados.push({ bk, avisado })
+    }
+    closeModal('hoursModal')
+
+    const linhas = resultados.map(({ bk, avisado }) => {
+      const quando = `${dataBR(bk.date)} às ${String(bk.start_time).slice(0, 5)}`
+      if (avisado) return `<div style="padding:8px 0;border-top:1px solid var(--border);font-size:14px;">✅ <strong>${bk.client_name}</strong> (${quando}) — avisado no WhatsApp</div>`
+      const fone = String(bk.client_phone || '').replace(/\D/g, '')
+      const wa = 'https://wa.me/' + (fone.startsWith('55') ? fone : '55' + fone) + '?text=' +
+        encodeURIComponent(`Olá, ${bk.client_name}! Aqui é da ${shop.name}. Precisei mudar meus horários e seu agendamento de ${quando} foi desmarcado. Me desculpe! Você pode escolher um novo horário em: ${shop.slug}.navalhanobigode.com.br`)
+      return `<div style="padding:8px 0;border-top:1px solid var(--border);font-size:14px;">📱 <strong>${bk.client_name}</strong> (${quando}) — <a href="${wa}" target="_blank" style="color:var(--primary);font-weight:600;">avisar manualmente</a></div>`
+    }).join('')
+
+    const o = document.createElement('div')
+    o.className = 'modal-overlay'
+    o.innerHTML = `
+      <div class="modal" style="max-height:90dvh;overflow-y:auto;">
+        <div class="modal-title">Horários salvos ✅</div>
+        <p style="font-size:13px;color:var(--ink-2);margin-bottom:10px;">${resultados.length} cliente${resultados.length > 1 ? 's' : ''} desmarcado${resultados.length > 1 ? 's' : ''} para liberar o novo horário:</p>
+        ${linhas}
+        <div class="modal-actions">
+          <button class="btn-modal-save" onclick="this.closest('.modal-overlay').remove()">Concluído</button>
+        </div>
+      </div>`
+    document.body.appendChild(o)
+    if (currentTab === 'agenda') { loadBookings(selectedDate); loadWeekOverview(); loadStats() }
+    return
+  }
+
   closeModal('hoursModal')
 }
 
