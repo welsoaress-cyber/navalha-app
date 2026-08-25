@@ -598,6 +598,22 @@ async function confirmBooking() {
   state.clientName = name
   state.clientPhone = phone
 
+  // Remarcação: se o cliente já tem horário futuro confirmado, pergunta se quer trocar
+  let oldBookingId = null
+  try {
+    const fone = phone.replace(/\D/g, '')
+    const hojeBR = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10)
+    const { data: prev } = await db.from('bookings')
+      .select('id,date,start_time,services(name)')
+      .eq('barbershop_id', state.shop.id).eq('client_phone', fone)
+      .eq('status', 'confirmed').gte('date', hojeBR)
+      .order('date').order('start_time').limit(1)
+    if (prev && prev.length) {
+      const escolha = await perguntaRemarcar(prev[0])
+      if (escolha === 'swap') oldBookingId = prev[0].id
+    }
+  } catch (e) {}
+
   const btn = document.getElementById('confirmBtn')
   btn.disabled = true
   btn.textContent = 'Confirmando…'
@@ -633,13 +649,44 @@ async function confirmBooking() {
 
   // Confirmação automática no WhatsApp do cliente (não bloqueia o fluxo)
   if (created?.id) {
-    fetch('/api/notify', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ booking_id: created.id, type: 'booking_new' })
-    }).catch(() => {})
+    if (oldBookingId) {
+      // Remarcação: cancela o horário antigo e manda UMA mensagem de "remarcado"
+      fetch('/api/reschedule', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old_booking_id: oldBookingId, new_booking_id: created.id })
+      }).catch(() => {})
+    } else {
+      fetch('/api/notify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ booking_id: created.id, type: 'booking_new' })
+      }).catch(() => {})
+    }
   }
 
   renderConfirmation()
+}
+
+// Pergunta ao cliente que já tem horário marcado: remarcar (trocar) ou manter os dois?
+function perguntaRemarcar(b) {
+  return new Promise(resolve => {
+    const dataBr = b.date.slice(8, 10) + '/' + b.date.slice(5, 7)
+    const horaBr = String(b.start_time).slice(0, 5)
+    const ov = document.createElement('div')
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px;'
+    ov.innerHTML = `
+      <div style="background:#0F172A;border:1px solid #334155;border-radius:16px;padding:24px 20px;max-width:340px;width:100%;text-align:center;color:#F8FAFC;font-family:inherit;">
+        <div style="font-size:34px;margin-bottom:10px;">🔁</div>
+        <div style="font-size:16px;font-weight:800;margin-bottom:8px;">Você já tem um horário marcado</div>
+        <div style="font-size:14px;color:#94A3B8;line-height:1.55;margin-bottom:18px;">
+          ${dataBr} às <strong style="color:#F8FAFC;">${horaBr}</strong>${b.services?.name ? ' — ' + b.services.name : ''}.<br>O que você quer fazer?
+        </div>
+        <button id="rmSwap" style="width:100%;padding:14px;border-radius:12px;border:none;background:#D4A843;color:#0F172A;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;">🔁 Remarcar — trocar pelo novo horário</button>
+        <button id="rmKeep" style="width:100%;margin-top:10px;padding:13px;border-radius:12px;border:1.5px solid #334155;background:none;color:#94A3B8;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">➕ Manter os dois horários</button>
+      </div>`
+    document.body.appendChild(ov)
+    ov.querySelector('#rmSwap').onclick = () => { ov.remove(); resolve('swap') }
+    ov.querySelector('#rmKeep').onclick = () => { ov.remove(); resolve('keep') }
+  })
 }
 
 function renderConfirmation() {

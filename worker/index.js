@@ -22,6 +22,7 @@ export default {
       if (url.pathname === '/api/admin-email' && request.method === 'POST') return await adminChangeEmail(request, env)
       if (url.pathname.startsWith('/late/')) return await latePage(url.pathname.slice(6).split('/')[0], env)
       if (url.pathname === '/api/late-act' && request.method === 'POST') return await lateAct(request, env)
+      if (url.pathname === '/api/reschedule' && request.method === 'POST') return await reschedule(request, env)
       if (url.pathname === '/api/cards-pix' && request.method === 'POST') return await cardsPix(request, env)
       if (url.pathname === '/pagar') return await payPage(request, env)
       if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
@@ -780,6 +781,42 @@ async function notify(request, env) {
     })
   }
   return json({ sent })
+}
+
+// ── Remarcação: cliente trocou de horário — cancela o antigo, avisa certo e cascateia a vaga ──
+async function reschedule(request, env) {
+  if (!env.SUPABASE_SERVICE_KEY) return json({ ok: false }, 503)
+  let body
+  try { body = await request.json() } catch { return json({ error: 'bad_request' }, 400) }
+  const re = /^[a-f0-9-]{36}$/
+  if (!re.test(body.old_booking_id || '') || !re.test(body.new_booking_id || '')) return json({ error: 'bad_request' }, 400)
+  if (body.old_booking_id === body.new_booking_id) return json({ error: 'bad_request' }, 400)
+
+  const velho = await loadBookingFull(env, body.old_booking_id)
+  const novo = await loadBookingFull(env, body.new_booking_id)
+  // Só troca horário do MESMO cliente na MESMA barbearia — nada de cancelar horário alheio
+  if (!velho || !novo || velho.barbershop_id !== novo.barbershop_id ||
+      velho.client_phone !== novo.client_phone ||
+      velho.status !== 'confirmed' || novo.status !== 'confirmed') {
+    return json({ error: 'invalid' }, 409)
+  }
+
+  await sb(env, `bookings?id=eq.${velho.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'cancelled' }) })
+  // A vaga liberada entra na cascata de antecipação
+  await offerNext(env, {
+    barbershop_id: velho.barbershop_id, barber_id: velho.barber_id,
+    date: velho.date, slot_start: velho.start_time, slot_end: velho.end_time
+  }, velho.start_time)
+
+  const shop = novo.barbershops || {}
+  const link = `${shop.slug}.navalhanobigode.com.br`
+  const servico = novo.services?.name ? `✂️ ${novo.services.name}\n` : ''
+  await evoSend(env, novo.client_phone,
+    `🔁 *Horário remarcado!*\n\n💈 ${shop.name}\n${servico}` +
+    `📅 De: ${fmtData(velho.date)} às ${String(velho.start_time).slice(0, 5)}\n` +
+    `📅 Para: *${fmtData(novo.date)} às ${String(novo.start_time).slice(0, 5)}*\n\n` +
+    `Até lá, ${novo.client_name}! Se precisar mudar de novo: ${link}`)
+  return json({ ok: true })
 }
 
 // ── "Tá chegando?": cliente atrasado responde por link; sem resposta, a vaga cascateia ──
