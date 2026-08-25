@@ -18,7 +18,8 @@ export default {
       if (url.pathname === '/api/notify' && request.method === 'POST') return await notify(request, env)
       if (url.pathname === '/api/cascade' && request.method === 'POST') return await cascadeStart(request, env)
       if (url.pathname === '/api/offer' && request.method === 'POST') return await offerAct(request, env)
-      if (url.pathname === '/api/offer') return await offerPage(url, env)
+      if (url.pathname === '/api/offer') return await offerPage(url.searchParams.get('t'), 'token', env)
+      if (url.pathname.startsWith('/o/')) return await offerPage(url.pathname.slice(3).split('/')[0], 'code', env)
       if (url.pathname === '/api/pix-status') return await pixStatus(url, env)
       if (url.pathname === '/api/mp-webhook') return await mpWebhook(request, url, env)
     } catch (e) {
@@ -317,12 +318,15 @@ async function offerNext(env, win, afterTime) {
     const dur = minutos(cand.end_time) - minutos(cand.start_time)
     if (dur > freedLen) continue // serviço não cabe na janela
 
+    const code = Array.from(crypto.getRandomValues(new Uint8Array(6)))
+      .map(b => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[b % 31]).join('')
     const [offer] = await sb(env, 'slot_offers', {
       method: 'POST',
       body: JSON.stringify({
         barbershop_id: win.barbershop_id, barber_id: win.barber_id,
         date: win.date, slot_start: win.slot_start, slot_end: win.slot_end,
         booking_id: cand.id,
+        code,
         status: 'pending',
         expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString()
       })
@@ -330,7 +334,7 @@ async function offerNext(env, win, afterTime) {
     if (!offer) return
 
     const shop = cand.barbershops || {}
-    const link = `https://navalha-app.welsoaress.workers.dev/api/offer?t=${offer.token}`
+    const link = `${shop.slug}.navalhanobigode.com.br/o/${code}`
     const text =
       `💈 *${shop.name}*\n\n` +
       `Olá, ${cand.client_name}! Abriu um horário mais cedo:\n` +
@@ -365,9 +369,9 @@ function offerHtml(inner) {
 }
 const offerMsg = (titulo, texto) => `<h2 style="color:#D4A843;margin:0 0 10px;">${titulo}</h2><p style="color:#94A3B8;font-size:15px;line-height:1.6;">${texto}</p>`
 
-async function loadValidOffer(env, token) {
-  if (!token) return { err: offerMsg('Link inválido', 'Confira o link recebido no WhatsApp.') }
-  const [offer] = await sb(env, `slot_offers?token=eq.${token}&select=*`) || []
+async function loadValidOffer(env, valor, campo) {
+  if (!valor || !/^[A-Za-z0-9-]+$/.test(valor)) return { err: offerMsg('Link inválido', 'Confira o link recebido no WhatsApp.') }
+  const [offer] = await sb(env, `slot_offers?${campo === 'code' ? 'code' : 'token'}=eq.${valor}&select=*`) || []
   if (!offer) return { err: offerMsg('Oferta não encontrada', 'Este link não é mais válido.') }
   if (offer.status !== 'pending') return { err: offerMsg('Oferta encerrada', 'Essa vaga já foi resolvida. Seu horário original continua valendo.') }
   if (new Date(offer.expires_at) < new Date()) {
@@ -380,9 +384,8 @@ async function loadValidOffer(env, token) {
 }
 
 // Página da oferta: só mostra os botões — nada é decidido no simples abrir do link
-async function offerPage(url, env) {
-  const token = url.searchParams.get('t')
-  const { err, offer, bk } = await loadValidOffer(env, token)
+async function offerPage(valor, campo, env) {
+  const { err, offer, bk } = await loadValidOffer(env, valor, campo)
   if (err) return offerHtml(err)
 
   const nova = String(offer.slot_start).slice(0, 5)
@@ -398,7 +401,7 @@ async function offerPage(url, env) {
       async function resp(a) {
         document.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.opacity = 0.5 })
         try {
-          const r = await fetch('/api/offer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: '${token}', a }) })
+          const r = await fetch('/api/offer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: '${valor}', c: '${campo}', a }) })
           const d = await r.json()
           document.getElementById('box').innerHTML = '<div style="font-size:44px;margin-bottom:12px;">💈</div><h2 style="color:#D4A843;margin:0 0 10px;">' + d.titulo + '</h2><p style="color:#94A3B8;font-size:15px;line-height:1.6;">' + d.texto + '</p>'
         } catch (e) {
@@ -413,7 +416,7 @@ async function offerPage(url, env) {
 async function offerAct(request, env) {
   let body
   try { body = await request.json() } catch { return json({ titulo: 'Erro', texto: 'Requisição inválida.' }, 400) }
-  const { err, offer, bk } = await loadValidOffer(env, body.t)
+  const { err, offer, bk } = await loadValidOffer(env, body.v || body.t, body.c || 'token')
   if (err) return json({ titulo: 'Oferta encerrada', texto: 'Essa vaga já foi resolvida. Seu horário original continua valendo.' })
 
   if (body.a === 'sim') {
