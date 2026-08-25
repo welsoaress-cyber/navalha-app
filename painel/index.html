@@ -394,6 +394,15 @@ async function cancelBooking(id) {
   loadBookings(selectedDate)
   loadWeekOverview()
 
+  // Aviso automático no WhatsApp do cliente; se falhar, abre o manual
+  try {
+    const r = await fetch('/api/notify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ booking_id: id, type: 'cancel_by_shop' })
+    })
+    const d = await r.json().catch(() => ({}))
+    if (d.sent) { alert(`✅ ${bk.client_name} foi avisado automaticamente no WhatsApp.`); return }
+  } catch (e) {}
   const link = cancelMsgLink(bk)
   if (link) window.open(link, '_blank')
 }
@@ -416,32 +425,46 @@ async function closeDay() {
   if (role === 'barber') q = q.eq('barber_id', myBarber.id)
   const { data: afetados } = await q
 
+  // Desmarca e avisa cada cliente automaticamente no WhatsApp
+  const resultados = []
   for (const bk of (afetados || [])) {
     await db.from('bookings').update({ status: 'blocked' }).eq('id', bk.id)
+    let ok = false
+    try {
+      const r = await fetch('/api/notify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ booking_id: bk.id, type: 'cancel_by_shop' })
+      })
+      const d = await r.json().catch(() => ({}))
+      ok = !!d.sent
+    } catch (e) {}
+    resultados.push({ bk, ok })
   }
 
   loadBookings(selectedDate)
   loadWeekOverview()
 
-  // Lista de avisos por WhatsApp
+  // Resumo: quem foi avisado automaticamente e quem precisa de aviso manual
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.id = 'notifyModal'
-  const lista = (afetados || []).length
-    ? afetados.map(bk => `
+  const lista = resultados.length
+    ? resultados.map(({ bk, ok }) => `
         <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border);">
           <div style="flex:1;">
             <div style="font-weight:700;">${bk.client_name}</div>
             <div style="font-size:12px;color:var(--ink-2);">${bk.start_time.slice(0,5)} · ${bk.services?.name || ''}</div>
           </div>
-          ${cancelMsgLink(bk) ? `<a class="btn-add" style="text-decoration:none;font-size:13px;padding:9px 14px;" href="${cancelMsgLink(bk)}" target="_blank">📱 Avisar</a>` : ''}
+          ${ok
+            ? '<span style="color:var(--green,#22c55e);font-size:13px;font-weight:700;">✅ Avisado</span>'
+            : (cancelMsgLink(bk) ? `<a class="btn-add" style="text-decoration:none;font-size:13px;padding:9px 14px;" href="${cancelMsgLink(bk)}" target="_blank">📱 Avisar manualmente</a>` : '')}
         </div>`).join('')
     : '<p style="color:var(--ink-2);font-size:14px;">Nenhum cliente tinha horário marcado nesse dia.</p>'
 
   overlay.innerHTML = `
     <div class="modal" style="max-height:85dvh;overflow-y:auto;">
       <div class="modal-title">✅ Dia ${dia}/${mes} fechado</div>
-      <p style="font-size:13px;color:var(--ink-2);margin-bottom:12px;">Toque em "Avisar" para enviar a mensagem pronta a cada cliente:</p>
+      <p style="font-size:13px;color:var(--ink-2);margin-bottom:12px;">Avisos enviados automaticamente pelo WhatsApp:</p>
       ${lista}
       <div class="modal-actions">
         <button class="btn-modal-save" onclick="document.getElementById('notifyModal').remove()">Concluído</button>

@@ -15,12 +15,17 @@ export default {
     try {
       if (url.pathname === '/api/pix' && request.method === 'POST') return await createPix(request, env)
       if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
+      if (url.pathname === '/api/notify' && request.method === 'POST') return await notify(request, env)
       if (url.pathname === '/api/pix-status') return await pixStatus(url, env)
       if (url.pathname === '/api/mp-webhook') return await mpWebhook(request, url, env)
     } catch (e) {
       return json({ error: 'internal', detail: String(e) }, 500)
     }
     return env.ASSETS.fetch(request)
+  },
+
+  async scheduled(event, env) {
+    await sendReminders(env)
   }
 }
 
@@ -193,6 +198,95 @@ async function sendWelcome(request, env) {
     })
   })
   return json({ sent: mr.ok })
+}
+
+// ── WhatsApp automático via Evolution API ──
+async function evoSend(env, number, text) {
+  if (!env.EVOLUTION_APIKEY || !env.EVOLUTION_URL) return false
+  const digits = String(number || '').replace(/\D/g, '')
+  if (digits.length < 10) return false
+  const to = digits.startsWith('55') ? digits : '55' + digits
+  try {
+    const r = await fetch(`${env.EVOLUTION_URL}/message/sendText/${env.EVOLUTION_INSTANCE || 'servnet'}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': env.EVOLUTION_APIKEY },
+      body: JSON.stringify({ number: to, text })
+    })
+    return r.ok
+  } catch (e) { return false }
+}
+
+function fmtData(dateStr) {
+  const [ano, mes, dia] = dateStr.split('-')
+  return `${dia}/${mes}`
+}
+
+async function loadBookingFull(env, bookingId) {
+  const r = await fetch(env.SUPABASE_URL + '/rest/v1/bookings?id=eq.' + encodeURIComponent(bookingId) +
+    '&select=*,services(name),barbers(name),barbershops(name,slug)', { headers: sbHeaders(env) })
+  const rows = await r.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function notify(request, env) {
+  if (!env.SUPABASE_SERVICE_KEY) return json({ sent: false, reason: 'not_configured' })
+  let body
+  try { body = await request.json() } catch { return json({ error: 'bad_request' }, 400) }
+  if (!body.booking_id || !body.type) return json({ error: 'bad_request' }, 400)
+
+  const bk = await loadBookingFull(env, body.booking_id)
+  if (!bk) return json({ sent: false, reason: 'not_found' })
+
+  const shop = bk.barbershops || {}
+  const link = `https://${shop.slug}.navalhanobigode.com.br`
+  const hora = String(bk.start_time).slice(0, 5)
+  const servico = bk.services?.name ? `✂️ ${bk.services.name}\n` : ''
+  const barbeiro = bk.barbers?.name ? `💇 Com: ${bk.barbers.name}\n` : ''
+  let text = null
+
+  if (body.type === 'booking_new') {
+    text = `✅ *Agendamento confirmado!*\n\n💈 ${shop.name}\n${servico}${barbeiro}📅 ${fmtData(bk.date)} às ${hora}\n\nAté lá, ${bk.client_name}! Se precisar remarcar: ${link}`
+  } else if (body.type === 'cancel_by_shop') {
+    text = `Olá, ${bk.client_name}! Aqui é da ${shop.name}. 💈\n\nInfelizmente precisei desmarcar seu horário de ${fmtData(bk.date)} às ${hora}${bk.services?.name ? ' (' + bk.services.name + ')' : ''} por um imprevisto. Me desculpe!\n\nVocê pode escolher um novo horário por aqui: ${link}`
+  }
+
+  if (!text) return json({ error: 'bad_type' }, 400)
+  const sent = await evoSend(env, bk.client_phone, text)
+  return json({ sent })
+}
+
+// Lembretes automáticos: roda de 10 em 10 minutos e avisa quem tem horário em ~2h
+async function sendReminders(env) {
+  if (!env.SUPABASE_SERVICE_KEY || !env.EVOLUTION_APIKEY) return
+  // Agora no fuso de Brasília (UTC-3)
+  const nowBR = new Date(Date.now() - 3 * 3600 * 1000)
+  const hoje = nowBR.toISOString().slice(0, 10)
+  const minAgora = nowBR.getUTCHours() * 60 + nowBR.getUTCMinutes()
+
+  const r = await fetch(env.SUPABASE_URL + '/rest/v1/bookings?date=eq.' + hoje +
+    '&status=eq.confirmed&reminder_sent=is.null&select=*,services(name),barbers(name),barbershops(name,slug)', {
+    headers: sbHeaders(env)
+  })
+  const rows = await r.json()
+  if (!Array.isArray(rows)) return
+
+  for (const bk of rows) {
+    const [h, m] = String(bk.start_time).split(':').map(Number)
+    const diff = h * 60 + m - minAgora
+    if (diff < 90 || diff > 150) continue // janela de ~2h antes
+
+    const shop = bk.barbershops || {}
+    const hora = String(bk.start_time).slice(0, 5)
+    const text = `⏰ *Lembrete do seu horário!*\n\n💈 ${shop.name}\n${bk.services?.name ? '✂️ ' + bk.services.name + '\n' : ''}📅 Hoje às ${hora}\n\nTe esperamos, ${bk.client_name}! Se não puder vir, remarque em: https://${shop.slug}.navalhanobigode.com.br`
+    const ok = await evoSend(env, bk.client_phone, text)
+    if (ok) {
+      await fetch(env.SUPABASE_URL + '/rest/v1/bookings?id=eq.' + bk.id, {
+        method: 'PATCH',
+        headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ reminder_sent: new Date().toISOString() })
+      })
+    }
+  }
 }
 
 function json(obj, status = 200) {

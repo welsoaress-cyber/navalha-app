@@ -612,7 +612,7 @@ async function confirmBooking() {
   const endMin = sh * 60 + sm + duration
   const endTime = `${String(Math.floor(endMin/60)).padStart(2,'0')}:${String(endMin%60).padStart(2,'0')}`
 
-  const { error } = await db.from('bookings').insert({
+  const { data: created, error } = await db.from('bookings').insert({
     barbershop_id: state.shop.id,
     barber_id: barberId,
     service_id: state.selectedService.id,
@@ -622,13 +622,21 @@ async function confirmBooking() {
     start_time: state.selectedTime,
     end_time: endTime,
     status: 'confirmed'
-  })
+  }).select('id').single()
 
   if (error) {
     btn.disabled = false
     btn.textContent = 'Confirmar agendamento'
     alert('Erro ao confirmar. Tente novamente.')
     return
+  }
+
+  // Confirmação automática no WhatsApp do cliente (não bloqueia o fluxo)
+  if (created?.id) {
+    fetch('/api/notify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ booking_id: created.id, type: 'booking_new' })
+    }).catch(() => {})
   }
 
   renderConfirmation()

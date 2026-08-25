@@ -7,6 +7,11 @@
     "binding": "ASSETS"
   },
   "vars": {
-    "SUPABASE_URL": "https://txmdehfleltpqokhyzex.supabase.co"
+    "SUPABASE_URL": "https://txmdehfleltpqokhyzex.supabase.co",
+    "EVOLUTION_URL": "http://163.176.122.177:8080",
+    "EVOLUTION_INSTANCE": "servnet"
+  },
+  "triggers": {
+    "crons": ["*/10 * * * *"]
   }
 }
