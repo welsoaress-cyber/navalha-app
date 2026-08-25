@@ -82,7 +82,10 @@
     <div class="nav-brand">💈 Navalha no Bigode</div>
     <div class="nav-sub">Painel Administrativo</div>
   </div>
-  <button class="action-btn" onclick="adminLogout()">Sair</button>
+  <div style="display:flex;gap:8px;">
+    <button class="action-btn" onclick="openMyPass()">🔑 Trocar senha</button>
+    <button class="action-btn" onclick="adminLogout()">Sair</button>
+  </div>
 </nav>
 
 <main class="content">
@@ -128,6 +131,61 @@ async function adminLogin() {
     errEl.style.display = 'block'; return
   }
   initAdmin()
+}
+
+// Troca da senha do próprio admin
+function openMyPass() {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'myPassModal'
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:400px;">
+      <div class="modal-title">🔑 Trocar minha senha</div>
+      <div class="form-group">
+        <label class="form-label">Nova senha</label>
+        <div style="position:relative;">
+          <input class="form-input" id="mpPass1" type="password" placeholder="Mínimo 8 caracteres" style="padding-right:44px;">
+          <button type="button" onclick="mpToggle()" id="mpEye" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--ink-2);font-size:18px;padding:4px;">👁</button>
+        </div>
+        <div class="form-hint">Use letras, números e símbolos — essa senha controla todos os seus clientes.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Repita a nova senha</label>
+        <input class="form-input" id="mpPass2" type="password" placeholder="••••••••">
+      </div>
+      <div id="mpErr" style="display:none;color:var(--red);font-size:13px;margin-bottom:10px;"></div>
+      <div class="modal-actions">
+        <button class="action-btn" style="flex:1;" onclick="document.getElementById('myPassModal').remove()">Cancelar</button>
+        <button class="btn-add" style="flex:1;" id="mpSave" onclick="saveMyPass()">Salvar</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+}
+
+function mpToggle() {
+  const inp = document.getElementById('mpPass1')
+  const btn = document.getElementById('mpEye')
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈' }
+  else { inp.type = 'password'; btn.textContent = '👁' }
+}
+
+async function saveMyPass() {
+  const p1 = document.getElementById('mpPass1').value
+  const p2 = document.getElementById('mpPass2').value
+  const errEl = document.getElementById('mpErr')
+  errEl.style.display = 'none'
+  if (p1.length < 8) { errEl.textContent = 'A senha deve ter pelo menos 8 caracteres.'; errEl.style.display = 'block'; return }
+  if (p1 !== p2) { errEl.textContent = 'As senhas não são iguais.'; errEl.style.display = 'block'; return }
+  const btn = document.getElementById('mpSave')
+  btn.disabled = true; btn.textContent = 'Salvando…'
+  const { error } = await db.auth.updateUser({ password: p1 })
+  if (error) {
+    btn.disabled = false; btn.textContent = 'Salvar'
+    errEl.textContent = 'Erro: ' + error.message
+    errEl.style.display = 'block'; return
+  }
+  document.getElementById('myPassModal').remove()
+  alert('✅ Senha alterada! Use a nova no próximo login.')
 }
 
 async function adminLogout() {
