@@ -310,7 +310,7 @@
           <button class="btn-copy" id="btnCopyApp" onclick="copyAppLink()">📋 Copiar link</button>
         </div>
         <div class="access-row">
-          <div class="access-label">Painel do barbeiro (agenda e configurações)</div>
+          <div class="access-label">Painel da barbearia (agenda e configurações)</div>
           <a class="access-val access-link" id="accPanelLink" href="/painel/" target="_blank">Abrir meu painel →</a>
         </div>
         <div class="access-row">
@@ -343,9 +343,9 @@ const WHATSAPP = '5511954490001'
 // ───────────────────────────────────────────────────────
 
 const PLANS = {
-  solo:   { name:'Solo',   monthly:99,  setup:150, max_barbers:1, changes_limit:10,   features:['1 barbeiro','App de agendamento','Painel do barbeiro','Agendamentos ilimitados','Suporte via WhatsApp','Configuração feita por nós'] },
-  equipe: { name:'Equipe', monthly:149, setup:300, max_barbers:3, changes_limit:30,   features:['Até 3 barbeiros','App de agendamento','Painel do barbeiro','Agendamentos ilimitados','Suporte via WhatsApp','Configuração feita por nós','100 cartões com QR Code'] },
-  black:  { name:'Black',  monthly:299, setup:500, max_barbers:5, changes_limit:null, features:['Até 5 barbeiros','App de agendamento','Painel do barbeiro','Agendamentos ilimitados','Suporte prioritário via WhatsApp','Configuração feita por nós','100 cartões por barbeiro'] }
+  solo:   { name:'Solo',   monthly:99,  setup:150, max_barbers:1, changes_limit:10,   features:['1 profissional','App de agendamento','Painel da barbearia','Agendamentos ilimitados','Suporte via WhatsApp','Configuração feita por nós'] },
+  equipe: { name:'Equipe', monthly:149, setup:300, max_barbers:3, changes_limit:30,   features:['Até 3 profissionais','App de agendamento','Painel da barbearia','Agendamentos ilimitados','Suporte via WhatsApp','Configuração feita por nós','100 cartões com QR Code'] },
+  black:  { name:'Black',  monthly:299, setup:500, max_barbers:5, changes_limit:null, features:['Até 5 profissionais','App de agendamento','Painel da barbearia','Agendamentos ilimitados','Suporte prioritário via WhatsApp','Configuração feita por nós','100 cartões por profissional'] }
 }
 
 const params  = new URLSearchParams(location.search)
@@ -391,7 +391,7 @@ function renderPlanChooser() {
       <div class="radio"></div>
       <div style="flex:1;">
         <div class="plan-name" style="font-size:16px;">${p.name}</div>
-        <div style="font-size:12px;color:var(--ink-3);margin-top:2px;">${p.max_barbers === 1 ? '1 barbeiro' : 'Até ' + p.max_barbers + ' barbeiros'}</div>
+        <div style="font-size:12px;color:var(--ink-3);margin-top:2px;">${p.max_barbers === 1 ? '1 profissional' : 'Até ' + p.max_barbers + ' profissionais'}</div>
       </div>
       <div class="plan-price" style="text-align:right;">
         <div class="amount" style="font-size:22px;">R$ ${p.monthly}</div>

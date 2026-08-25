@@ -153,7 +153,7 @@
   <div class="nav-tabs">
     <div class="nav-tab active" onclick="switchTab('agenda')">Agenda</div>
     <div class="nav-tab" onclick="switchTab('servicos')">Serviços</div>
-    <div class="nav-tab" onclick="switchTab('barbeiros')">Barbeiros</div>
+    <div class="nav-tab" onclick="switchTab('barbeiros')">Equipe</div>
   </div>
   <div class="nav-right">
     <div class="shop-badge" id="shopBadge">…</div>
@@ -317,7 +317,7 @@ async function renderAgenda() {
     <div class="stats-row" id="statsRow">
       <div class="stat-card"><div class="stat-label">Hoje</div><div class="stat-value gold" id="statToday">—</div><div class="stat-sub">agendamentos</div></div>
       <div class="stat-card"><div class="stat-label">Semana</div><div class="stat-value" id="statWeek">—</div><div class="stat-sub">agendamentos</div></div>
-      <div class="stat-card"><div class="stat-label">Plano</div><div class="stat-value" style="font-size:18px;text-transform:capitalize;" id="statPlan">${shop.plan}</div><div class="stat-sub">${shop.max_barbers} barbeiro${shop.max_barbers > 1 ? 's' : ''}</div></div>
+      <div class="stat-card"><div class="stat-label">Plano</div><div class="stat-value" style="font-size:18px;text-transform:capitalize;" id="statPlan">${shop.plan}</div><div class="stat-sub">${shop.max_barbers} profission${shop.max_barbers > 1 ? 'ais' : 'al'}</div></div>
     </div>
     <div class="week-card">
       <div class="week-title">Sua semana</div>
@@ -832,7 +832,7 @@ function renderBarbersList() {
   const el = document.getElementById('barbersList')
   if (!el) return
   if (!barbers.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">💈</div><div class="empty-title">Nenhum barbeiro</div><p>Adicione os barbeiros da sua equipe.</p></div>'
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">💈</div><div class="empty-title">Ninguém na equipe ainda</div><p>Adicione os profissionais da sua equipe.</p></div>'
     return
   }
   const solo = shop.max_barbers === 1
@@ -875,7 +875,7 @@ function openBarberModal() {
         <input class="form-input" id="bName" type="text" placeholder="Ex: João">
       </div>
       <div class="form-group">
-        <label class="form-label">E-mail do barbeiro (para ele acessar a agenda dele)</label>
+        <label class="form-label">E-mail do profissional (para acessar a própria agenda)</label>
         <input class="form-input" id="bEmail" type="email" placeholder="joao@email.com (opcional)">
       </div>
       <div class="form-group">

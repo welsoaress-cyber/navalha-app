@@ -934,7 +934,7 @@ async function lateAct(request, env) {
   if (body.a === 'sim') {
     await sb(env, `bookings?id=eq.${bk.id}`, { method: 'PATCH', body: JSON.stringify({ late_reply: 'coming' }) })
     if (shop.owner_phone) await evoSend(env, shop.owner_phone, `🏃 *${bk.client_name}* respondeu: tá chegando! (horário das ${hora})`)
-    return json({ titulo: 'Boa! Te esperamos 💈', texto: `Avisamos o barbeiro que você está a caminho. Seu horário das ${hora} está garantido.` })
+    return json({ titulo: 'Boa! Te esperamos 💈', texto: `Avisamos a barbearia que você está a caminho. Seu horário das ${hora} está garantido.` })
   }
 
   // Não vem: libera o horário e a cascata de antecipação assume
