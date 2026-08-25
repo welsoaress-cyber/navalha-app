@@ -44,6 +44,11 @@
 
   /* PLAN CARD */
   .plan-selected { background: rgba(212,168,67,0.08); border: 1.5px solid rgba(212,168,67,0.4); border-radius: 14px; padding: 18px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .plan-opt { position: relative; border: 1.5px solid var(--border); border-radius: 14px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; margin-bottom: 10px; transition: border-color 0.15s, background 0.15s; }
+  .plan-opt.sel { border-color: var(--primary); background: rgba(212,168,67,0.08); box-shadow: 0 0 0 2px rgba(212,168,67,0.22); }
+  .plan-opt .tag-pop { position: absolute; top: -9px; right: 12px; background: var(--primary); color: #0F172A; font-size: 10px; font-weight: 800; padding: 2px 10px; border-radius: 100px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .plan-opt .radio { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; }
+  .plan-opt.sel .radio { border-color: var(--primary); background: radial-gradient(circle, var(--primary) 45%, transparent 52%); }
   .plan-name { font-family: 'Sora', sans-serif; font-size: 18px; font-weight: 800; }
   .plan-price .amount { font-family: 'Sora', sans-serif; font-size: 26px; font-weight: 800; color: var(--primary); }
   .plan-price .period { font-size: 12px; color: var(--ink-2); }
@@ -150,9 +155,9 @@
     <!-- STEP 1: Plano -->
     <div class="step" id="s1">
       <div class="step-label">Passo 1 de 6</div>
-      <div class="step-title">Você escolheu o plano</div>
-      <div class="step-sub">Confirme abaixo e vamos configurar sua barbearia.</div>
-      <div class="plan-selected" id="planCard"></div>
+      <div class="step-title">Escolha seu plano</div>
+      <div class="step-sub">Toque no plano ideal — dá pra mudar depois, quando quiser.</div>
+      <div id="planChooser"></div>
       <ul class="plan-features" id="planFeatures"></ul>
       <button class="btn-next" onclick="goStep(2)">Continuar →</button>
     </div>
@@ -344,8 +349,8 @@ const PLANS = {
 }
 
 const params  = new URLSearchParams(location.search)
-const planKey = params.get('plano') || 'equipe'
-const plan    = PLANS[planKey] || PLANS.equipe
+let planKey = PLANS[params.get('plano')] ? params.get('plano') : 'equipe'
+let plan    = PLANS[planKey]
 let currentStep = 1
 
 // ── Serviços coletados ──
@@ -365,18 +370,25 @@ const DAYS = [
 const availState = { dom:false, seg:true, ter:true, qua:true, qui:true, sex:true, sab:true }
 const availTime  = { dom:{open:'09:00',close:'18:00'}, seg:{open:'09:00',close:'18:00'}, ter:{open:'09:00',close:'18:00'}, qua:{open:'09:00',close:'18:00'}, qui:{open:'09:00',close:'18:00'}, sex:{open:'09:00',close:'18:00'}, sab:{open:'09:00',close:'14:00'} }
 
-// ── Render plano ──
-document.getElementById('planCard').innerHTML = `
-  <div>
-    <div class="plan-name">${plan.name}</div>
-    <div style="font-size:12px;color:var(--ink-3);margin-top:3px;">Mensal + Kit de Instalação</div>
-  </div>
-  <div class="plan-price">
-    <div class="amount">R$ ${plan.monthly}</div>
-    <div class="period">/mês</div>
-    <div class="setup">+ Kit R$ ${plan.setup}</div>
-  </div>`
-document.getElementById('planFeatures').innerHTML = plan.features.map(f => `<li>${f}</li>`).join('')
+// ── Escolha de plano (Passo 1) ──
+function renderPlanChooser() {
+  document.getElementById('planChooser').innerHTML = Object.entries(PLANS).map(([key, p]) => `
+    <div class="plan-opt${key === planKey ? ' sel' : ''}" onclick="selectPlan('${key}')">
+      ${key === 'equipe' ? '<div class="tag-pop">Mais escolhido</div>' : ''}
+      <div class="radio"></div>
+      <div style="flex:1;">
+        <div class="plan-name" style="font-size:16px;">${p.name}</div>
+        <div style="font-size:12px;color:var(--ink-3);margin-top:2px;">${p.max_barbers === 1 ? '1 barbeiro' : 'Até ' + p.max_barbers + ' barbeiros'}</div>
+      </div>
+      <div class="plan-price" style="text-align:right;">
+        <div class="amount" style="font-size:22px;">R$ ${p.monthly}</div>
+        <div class="period">/mês + Kit R$ ${p.setup}</div>
+      </div>
+    </div>`).join('')
+  document.getElementById('planFeatures').innerHTML = plan.features.map(f => `<li>${f}</li>`).join('')
+}
+function selectPlan(key) { planKey = key; plan = PLANS[key]; renderPlanChooser() }
+renderPlanChooser()
 
 
 // ── Gera horários dropdown ──
