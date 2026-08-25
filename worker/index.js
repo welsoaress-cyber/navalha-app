@@ -516,6 +516,8 @@ async function notify(request, env) {
 
   if (body.type === 'booking_new') {
     text = `✅ *Agendamento confirmado!*\n\n💈 ${shop.name}\n${servico}${barbeiro}📅 ${fmtData(bk.date)} às ${hora}\n\nAté lá, ${bk.client_name}! Se precisar remarcar: ${link}`
+  } else if (body.type === 'booking_done') {
+    text = `💈 *${shop.name}*\n\nObrigado pela visita, ${bk.client_name}! ✂️✨\nEsperamos que tenha ficado no capricho.\n\nQuando precisar, é só agendar de novo: ${link}\n\nAté a próxima! 🤝`
   } else if (body.type === 'cancel_by_shop') {
     text = `Olá, ${bk.client_name}! Aqui é da ${shop.name}. 💈\n\nInfelizmente precisei desmarcar seu horário de ${fmtData(bk.date)} às ${hora}${bk.services?.name ? ' (' + bk.services.name + ')' : ''} por um imprevisto. Me desculpe!\n\nVocê pode escolher um novo horário por aqui: ${link}`
   }

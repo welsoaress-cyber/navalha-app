@@ -589,6 +589,10 @@ async function closeDay() {
 
 async function updateStatus(id, status) {
   await db.from('bookings').update({ status }).eq('id', id)
+  if (status === 'completed') {
+    // Agradecimento automático no WhatsApp do cliente
+    fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ booking_id: id, type: 'booking_done' }) }).catch(() => {})
+  }
   loadBookings(selectedDate)
 }
 
