@@ -436,22 +436,26 @@ async function closeDay() {
   if (!(await askConfirm(`Fechar o dia <strong>${dia}/${mes}</strong>?<br><br><span style="font-size:13px;color:var(--ink-2);">Ninguém mais agenda nesse dia, os horários existentes são desmarcados e os clientes são avisados automaticamente.</span>`))) return
 
   const alvo = role === 'barber' ? [myBarber] : barbers.filter(b => b.active)
+  const problemas = []
 
-  // Fecha o dia para os barbeiros
+  // Fecha o dia para os barbeiros (novos agendamentos bloqueados)
   for (const b of alvo) {
-    await db.from('blocked_days').upsert({ barber_id: b.id, date: selectedDate }, { onConflict: 'barber_id,date' })
+    const { error } = await db.from('blocked_days').upsert({ barber_id: b.id, date: selectedDate }, { onConflict: 'barber_id,date' })
+    if (error) problemas.push('Bloquear dia de ' + b.name + ': ' + error.message)
   }
 
-  // Desmarca os agendamentos existentes
+  // Busca os agendamentos ativos do dia
   let q = db.from('bookings').select('*, services(name)')
     .eq('barbershop_id', shop.id).eq('date', selectedDate).eq('status', 'confirmed')
   if (role === 'barber') q = q.eq('barber_id', myBarber.id)
-  const { data: afetados } = await q
+  const { data: afetados, error: qErr } = await q
+  if (qErr) problemas.push('Buscar agendamentos: ' + qErr.message)
 
   // Desmarca e avisa cada cliente automaticamente no WhatsApp
   const resultados = []
   for (const bk of (afetados || [])) {
-    await db.from('bookings').update({ status: 'blocked' }).eq('id', bk.id)
+    const { error: uErr } = await db.from('bookings').update({ status: 'blocked' }).eq('id', bk.id)
+    if (uErr) { problemas.push('Desmarcar ' + bk.client_name + ': ' + uErr.message); continue }
     let ok = false
     try {
       const r = await fetch('/api/notify', {
@@ -463,6 +467,14 @@ async function closeDay() {
     } catch (e) {}
     resultados.push({ bk, ok })
   }
+
+  // Prova real: sobrou alguém confirmado neste dia?
+  let vq = db.from('bookings').select('id', { count: 'exact', head: true })
+    .eq('barbershop_id', shop.id).eq('date', selectedDate).eq('status', 'confirmed')
+  if (role === 'barber') vq = vq.eq('barber_id', myBarber.id)
+  const { count: restantes } = await vq
+  if (restantes > 0) problemas.push(restantes + ' agendamento(s) ainda constam como confirmados — tente fechar o dia de novo.')
+  if (problemas.length) alert('⚠️ Atenção:\n\n' + problemas.join('\n'))
 
   loadBookings(selectedDate)
   loadWeekOverview()
