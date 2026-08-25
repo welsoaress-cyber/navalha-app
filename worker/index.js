@@ -17,7 +17,8 @@ export default {
       if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
       if (url.pathname === '/api/notify' && request.method === 'POST') return await notify(request, env)
       if (url.pathname === '/api/cascade' && request.method === 'POST') return await cascadeStart(request, env)
-      if (url.pathname === '/api/offer') return await offerAnswer(url, env)
+      if (url.pathname === '/api/offer' && request.method === 'POST') return await offerAct(request, env)
+      if (url.pathname === '/api/offer') return await offerPage(url, env)
       if (url.pathname === '/api/pix-status') return await pixStatus(url, env)
       if (url.pathname === '/api/mp-webhook') return await mpWebhook(request, url, env)
     } catch (e) {
@@ -329,15 +330,14 @@ async function offerNext(env, win, afterTime) {
     if (!offer) return
 
     const shop = cand.barbershops || {}
-    const base = `https://navalha-app.welsoaress.workers.dev/api/offer?t=${offer.token}`
+    const link = `https://navalha-app.welsoaress.workers.dev/api/offer?t=${offer.token}`
     const text =
-      `Olá, ${cand.client_name}! Aqui é da ${shop.name}. 💈\n\n` +
-      `Abriu um horário mais cedo no dia ${fmtData(win.date)}: *${String(win.slot_start).slice(0,5)}* ` +
-      `(você está marcado para ${String(cand.start_time).slice(0,5)}).\n\n` +
-      `Quer antecipar?\n\n` +
-      `✅ Sim, antecipar: ${base}&a=sim\n` +
-      `🙅 Manter meu horário: ${base}&a=nao\n\n` +
-      `(oferta válida por 5 minutos ⏱)`
+      `💈 *${shop.name}*\n\n` +
+      `Olá, ${cand.client_name}! Abriu um horário mais cedo:\n\n` +
+      `🗓 Dia ${fmtData(win.date)}\n` +
+      `🕐 *${String(win.slot_start).slice(0,5)}h* — você está marcado às ${String(cand.start_time).slice(0,5)}h\n\n` +
+      `Quer antecipar? Toque e escolha:\n${link}\n\n` +
+      `⏱ Oferta válida por 5 minutos.`
     await evoSend(env, cand.client_phone, text)
     return // uma oferta por vez; o resto acontece via resposta ou expiração
   }
@@ -356,29 +356,67 @@ async function cascadeStart(request, env) {
   return json({ ok: true })
 }
 
-async function offerAnswer(url, env) {
-  const token = url.searchParams.get('t')
-  const resposta = url.searchParams.get('a')
-  const page = (titulo, texto) => new Response(
+function offerHtml(inner) {
+  return new Response(
     `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
      <body style="font-family:Arial;background:#0F172A;color:#F8FAFC;display:flex;align-items:center;justify-content:center;min-height:100dvh;margin:0;padding:24px;text-align:center;">
-     <div><div style="font-size:44px;margin-bottom:12px;">💈</div><h2 style="color:#D4A843;margin:0 0 10px;">${titulo}</h2><p style="color:#94A3B8;font-size:15px;line-height:1.6;">${texto}</p></div></body>`,
+     <div id="box" style="max-width:340px;"><div style="font-size:44px;margin-bottom:12px;">💈</div>${inner}</div></body>`,
     { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+}
+const offerMsg = (titulo, texto) => `<h2 style="color:#D4A843;margin:0 0 10px;">${titulo}</h2><p style="color:#94A3B8;font-size:15px;line-height:1.6;">${texto}</p>`
 
-  if (!token) return page('Link inválido', 'Confira o link recebido no WhatsApp.')
+async function loadValidOffer(env, token) {
+  if (!token) return { err: offerMsg('Link inválido', 'Confira o link recebido no WhatsApp.') }
   const [offer] = await sb(env, `slot_offers?token=eq.${token}&select=*`) || []
-  if (!offer) return page('Oferta não encontrada', 'Este link não é mais válido.')
-  if (offer.status !== 'pending') return page('Oferta encerrada', 'Essa vaga já foi resolvida. Seu horário original continua valendo.')
+  if (!offer) return { err: offerMsg('Oferta não encontrada', 'Este link não é mais válido.') }
+  if (offer.status !== 'pending') return { err: offerMsg('Oferta encerrada', 'Essa vaga já foi resolvida. Seu horário original continua valendo.') }
   if (new Date(offer.expires_at) < new Date()) {
     await sb(env, `slot_offers?id=eq.${offer.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'expired' }) })
-    return page('Oferta expirada', 'O prazo de 5 minutos passou. Seu horário original continua valendo.')
+    return { err: offerMsg('Oferta expirada', 'O prazo de 5 minutos passou. Seu horário original continua valendo.') }
   }
-
   const bk = await loadBookingFull(env, offer.booking_id)
-  if (!bk || bk.status !== 'confirmed') return page('Oferta encerrada', 'Seu agendamento mudou desde a oferta.')
+  if (!bk || bk.status !== 'confirmed') return { err: offerMsg('Oferta encerrada', 'Seu agendamento mudou desde a oferta.') }
+  return { offer, bk }
+}
 
-  if (resposta === 'sim') {
-    // Move o horário do cliente para a vaga liberada
+// Página da oferta: só mostra os botões — nada é decidido no simples abrir do link
+async function offerPage(url, env) {
+  const token = url.searchParams.get('t')
+  const { err, offer, bk } = await loadValidOffer(env, token)
+  if (err) return offerHtml(err)
+
+  const nova = String(offer.slot_start).slice(0, 5)
+  const atual = String(bk.start_time).slice(0, 5)
+  const btn = 'width:100%;padding:15px;border-radius:12px;border:none;font-size:16px;font-weight:bold;cursor:pointer;font-family:inherit;'
+  return offerHtml(`
+    ${offerMsg('Antecipar seu horário?', `Abriu uma vaga às <strong style="color:#F8FAFC;">${nova}</strong> no dia ${fmtData(offer.date)}.<br>Você está marcado para ${atual}.`)}
+    <div style="margin-top:22px;display:flex;flex-direction:column;gap:10px;">
+      <button style="${btn}background:#D4A843;color:#0F172A;" onclick="resp('sim')">✅ Sim, antecipar para ${nova}</button>
+      <button style="${btn}background:none;border:1.5px solid #334155;color:#94A3B8;" onclick="resp('nao')">Manter meu horário das ${atual}</button>
+    </div>
+    <script>
+      async function resp(a) {
+        document.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.opacity = 0.5 })
+        try {
+          const r = await fetch('/api/offer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: '${token}', a }) })
+          const d = await r.json()
+          document.getElementById('box').innerHTML = '<div style="font-size:44px;margin-bottom:12px;">💈</div><h2 style="color:#D4A843;margin:0 0 10px;">' + d.titulo + '</h2><p style="color:#94A3B8;font-size:15px;line-height:1.6;">' + d.texto + '</p>'
+        } catch (e) {
+          alert('Falha de conexão. Tente de novo.')
+          document.querySelectorAll('button').forEach(b => { b.disabled = false; b.style.opacity = 1 })
+        }
+      }
+    </script>`)
+}
+
+// Ação da oferta: só executa via botão (POST) — imune ao robô de prévia do WhatsApp
+async function offerAct(request, env) {
+  let body
+  try { body = await request.json() } catch { return json({ titulo: 'Erro', texto: 'Requisição inválida.' }, 400) }
+  const { err, offer, bk } = await loadValidOffer(env, body.t)
+  if (err) return json({ titulo: 'Oferta encerrada', texto: 'Essa vaga já foi resolvida. Seu horário original continua valendo.' })
+
+  if (body.a === 'sim') {
     const dur = minutos(bk.end_time) - minutos(bk.start_time)
     const oldWin = { barbershop_id: bk.barbershop_id, barber_id: bk.barber_id, date: bk.date, slot_start: bk.start_time, slot_end: bk.end_time }
     await sb(env, `bookings?id=eq.${bk.id}`, {
@@ -389,12 +427,10 @@ async function offerAnswer(url, env) {
     const shop = bk.barbershops || {}
     await evoSend(env, bk.client_phone,
       `✅ Prontinho, ${bk.client_name}! Seu horário na ${shop.name} foi antecipado para *${String(offer.slot_start).slice(0,5)}* do dia ${fmtData(bk.date)}. Até lá! 💈`)
-    // A vaga antiga dele abre → cascata continua
     await offerNext(env, oldWin, oldWin.slot_start)
-    return page('Horário antecipado! ✅', `Seu novo horário é ${String(offer.slot_start).slice(0,5)} do dia ${fmtData(bk.date)}. Enviamos a confirmação no seu WhatsApp.`)
+    return json({ titulo: 'Horário antecipado! ✅', texto: `Seu novo horário é ${String(offer.slot_start).slice(0,5)} do dia ${fmtData(bk.date)}. Enviamos a confirmação no seu WhatsApp.` })
   }
 
-  // Recusou: avisa e oferece ao próximo da fila
   await sb(env, `slot_offers?id=eq.${offer.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'declined' }) })
   await evoSend(env, bk.client_phone,
     `Tudo certo, ${bk.client_name}! A vaga das ${String(offer.slot_start).slice(0,5)} foi repassada. Seu horário das ${String(bk.start_time).slice(0,5)} continua confirmado. 💈`)
@@ -402,7 +438,7 @@ async function offerAnswer(url, env) {
     barbershop_id: offer.barbershop_id, barber_id: offer.barber_id,
     date: offer.date, slot_start: offer.slot_start, slot_end: offer.slot_end
   }, bk.start_time)
-  return page('Tudo certo! 👍', `Seu horário das ${String(bk.start_time).slice(0,5)} continua valendo. Obrigado por avisar!`)
+  return json({ titulo: 'Tudo certo! 👍', texto: `Seu horário das ${String(bk.start_time).slice(0,5)} continua valendo. Obrigado por avisar!` })
 }
 
 // Ofertas que venceram sem resposta passam para o próximo da fila

@@ -366,6 +366,25 @@ function changeDate(d) {
   loadWeekOverview()
 }
 
+// Caixa de confirmação própria, com botões Sim / Não
+function askConfirm(msg) {
+  return new Promise(resolve => {
+    const o = document.createElement('div')
+    o.className = 'modal-overlay'
+    o.innerHTML = `
+      <div class="modal" style="max-width:340px;text-align:center;">
+        <p style="font-size:15px;line-height:1.6;margin-bottom:22px;">${msg}</p>
+        <div class="modal-actions">
+          <button class="btn-modal-cancel" id="ncBtn">Não</button>
+          <button class="btn-modal-save" id="ycBtn">Sim</button>
+        </div>
+      </div>`
+    document.body.appendChild(o)
+    o.querySelector('#ycBtn').onclick = () => { o.remove(); resolve(true) }
+    o.querySelector('#ncBtn').onclick = () => { o.remove(); resolve(false) }
+  })
+}
+
 // Mensagem pronta de cancelamento para o cliente
 function cancelMsgLink(bk) {
   const [ano, mes, dia] = bk.date.split('-')
@@ -386,7 +405,7 @@ async function cancelBooking(id) {
     .select('*, services(name)')
     .eq('id', id).maybeSingle()
   if (!bk) return
-  if (!confirm(`Cancelar o horário de ${bk.client_name} às ${bk.start_time.slice(0,5)}?`)) return
+  if (!(await askConfirm(`Cancelar o horário de <strong>${bk.client_name}</strong> às <strong>${bk.start_time.slice(0,5)}</strong>?`))) return
 
   await db.from('bookings').update({ status: 'cancelled' }).eq('id', id)
   loadBookings(selectedDate)
@@ -414,7 +433,7 @@ async function cancelBooking(id) {
 // Fecha o dia inteiro: bloqueia novos agendamentos e lista os clientes para avisar
 async function closeDay() {
   const [ano, mes, dia] = selectedDate.split('-')
-  if (!confirm(`Fechar o dia ${dia}/${mes}?\n\n• Ninguém mais consegue agendar nesse dia\n• Os agendamentos existentes são desmarcados\n• Você recebe a lista de clientes para avisar pelo WhatsApp`)) return
+  if (!(await askConfirm(`Fechar o dia <strong>${dia}/${mes}</strong>?<br><br><span style="font-size:13px;color:var(--ink-2);">Ninguém mais agenda nesse dia, os horários existentes são desmarcados e os clientes são avisados automaticamente.</span>`))) return
 
   const alvo = role === 'barber' ? [myBarber] : barbers.filter(b => b.active)
 
