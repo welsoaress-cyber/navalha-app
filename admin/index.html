@@ -479,10 +479,12 @@ async function salvarTrocaEmail(id) {
     })
     const d = await r.json()
     if (!r.ok || !d.ok) throw new Error(d.error || 'falhou')
+    // Reenvia o e-mail de boas-vindas pro endereço corrigido (como se tivesse acabado de se cadastrar)
+    fetch('/api/welcome', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: id }) }).catch(() => {})
     document.getElementById('emailModal').remove()
     alert(d.auth_updated
-      ? `✅ E-mail trocado!\n\nNovo login: ${novo}\nSenha: a mesma que a pessoa criou.\n\nAvisa o barbeiro no WhatsApp.`
-      : `✅ Cadastro atualizado para ${novo}.\n\n⚠️ Não achei a conta de login com o e-mail antigo — se o barbeiro não conseguir entrar, use "Definir senha" ou me chama.`)
+      ? `✅ E-mail trocado!\n\nNovo login: ${novo}\nSenha: a mesma que a pessoa criou.\n\n📧 O e-mail de boas-vindas foi reenviado pro endereço novo. Avisa o barbeiro no WhatsApp.`
+      : `✅ Cadastro atualizado para ${novo} (boas-vindas reenviado).\n\n⚠️ Não achei a conta de login com o e-mail antigo — se o barbeiro não conseguir entrar, use "Definir senha" ou me chama.`)
     loadClients()
   } catch (e) {
     btn.disabled = false; btn.textContent = 'Salvar'
