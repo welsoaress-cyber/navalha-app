@@ -18,6 +18,8 @@ create table if not exists public.barbershops (
   billing_notified_due date,
   billing_notified_overdue date,
   last_renewal_payment_id text,             -- evita renovação duplicada pelo webhook
+  owner_birthday date,                      -- 10% de desconto no mês do aniversário
+  weekly_report_sent date,                  -- controle do relatório semanal
   logo_url      text,
   primary_color text default '#D4A843',      -- cor principal (hex)
   plan          text default 'solo',         -- solo | equipe | black

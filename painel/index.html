@@ -224,8 +224,8 @@ async function init() {
   checkBillingLock()
 }
 
-// ── Bloqueio por mensalidade vencida: agenda fica visível, mas borrada ──
-const PLAN_PRECOS = { solo: 99, equipe: 149, black: 299 }
+// ── Bloqueio por mensalidade vencida: agenda fica visível, mas borrada.
+//    O Pix já aparece pronto — a única saída é pagar.
 function hojeBR() { return new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10) }
 function dataBR(d) { return d.slice(8, 10) + '/' + d.slice(5, 7) }
 
@@ -238,36 +238,35 @@ async function checkBillingLock() {
   const { count } = await db.from('bookings').select('*', { count: 'exact', head: true })
     .eq('barbershop_id', shop.id).gte('date', hojeBR()).eq('status', 'confirmed')
 
-  const valor = PLAN_PRECOS[shop.plan] || 99
   const overlay = document.createElement('div')
   overlay.id = 'billingLock'
   overlay.innerHTML = `
     <div class="lock-card" id="lockCard">
-      <div style="font-size:44px;margin-bottom:10px;">🔒</div>
-      <div style="font-size:19px;font-weight:800;margin-bottom:8px;">Mensalidade vencida</div>
-      <div style="font-size:14px;color:var(--ink-2);line-height:1.6;">Venceu dia <strong style="color:var(--ink);">${dataBR(shop.next_due)}</strong>. Seu painel foi bloqueado, mas seus clientes continuam agendando normalmente.</div>
-      ${count > 0 ? `<div class="lock-count">✂️ Você tem <strong>${count} cliente${count > 1 ? 's' : ''} agendado${count > 1 ? 's' : ''}</strong> te esperando</div>` : '<div style="height:16px;"></div>'}
-      <button class="btn-pay" id="btnPay" onclick="payMensalidade()">Pagar agora — Pix R$ ${valor}</button>
+      <div style="font-size:38px;margin-bottom:8px;">🔒</div>
+      <div style="font-size:19px;font-weight:800;margin-bottom:6px;">Mensalidade vencida</div>
+      <div style="font-size:13px;color:var(--ink-2);line-height:1.6;">Venceu dia <strong style="color:var(--ink);">${dataBR(shop.next_due)}</strong>. Seus clientes continuam agendando normalmente.</div>
+      ${count > 0 ? `<div class="lock-count">✂️ Você tem <strong>${count} cliente${count > 1 ? 's' : ''} agendado${count > 1 ? 's' : ''}</strong> te esperando</div>` : '<div style="height:12px;"></div>'}
+      <div id="payArea" style="font-size:14px;color:var(--ink-2);">Gerando seu Pix…</div>
       <div style="font-size:12px;color:var(--ink-3);margin-top:10px;">Pagou, liberou. Na hora, sem falar com ninguém.</div>
     </div>`
   document.body.appendChild(overlay)
+  payMensalidade()
 }
 
 let _payPoll = null
 async function payMensalidade() {
-  const btn = document.getElementById('btnPay')
-  btn.disabled = true; btn.textContent = 'Gerando Pix…'
+  const area = document.getElementById('payArea')
+  area.innerHTML = 'Gerando seu Pix…'
   try {
     const r = await fetch('/api/renew-pix', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: shop.id }) })
     const d = await r.json()
     if (!d.qr_base64) throw new Error('sem qr')
-    document.getElementById('lockCard').innerHTML = `
-      <div style="font-size:17px;font-weight:800;margin-bottom:4px;">Mensalidade — R$ ${d.amount}</div>
-      <div style="font-size:13px;color:var(--ink-2);margin-bottom:14px;">Escaneie ou use o copia e cola</div>
-      <img src="data:image/png;base64,${d.qr_base64}" style="width:200px;border-radius:12px;background:#fff;padding:8px;" alt="QR Code Pix">
-      <input id="cecPay" readonly value="${d.qr_code}" style="width:100%;margin-top:12px;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink-2);font-size:11px;">
-      <button class="btn-pay" id="btnCopiaPay" onclick="copiaPix()" style="margin-top:8px;">📋 Copiar código Pix</button>
-      <div style="font-size:12px;color:var(--ink-3);margin-top:10px;">Assim que pagar, o painel libera sozinho.</div>`
+    area.innerHTML = `
+      ${d.birthday ? '<div style="font-size:13px;color:var(--primary);font-weight:700;margin-bottom:6px;">🎂 Mês do seu aniversário: 10% de desconto aplicado!</div>' : ''}
+      <div style="font-size:17px;font-weight:800;margin-bottom:10px;">Pix de R$ ${d.amount}</div>
+      <img src="data:image/png;base64,${d.qr_base64}" style="width:190px;border-radius:12px;background:#fff;padding:8px;" alt="QR Code Pix">
+      <input id="cecPay" readonly value="${d.qr_code}" style="width:100%;margin-top:10px;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink-2);font-size:11px;">
+      <button class="btn-pay" id="btnCopiaPay" onclick="copiaPix()" style="margin-top:8px;">📋 Copiar código Pix</button>`
     _payPoll = setInterval(async () => {
       try {
         const s = await fetch('/api/pix-status?id=' + d.payment_id).then(x => x.json())
@@ -282,8 +281,9 @@ async function payMensalidade() {
       } catch (e) {}
     }, 5000)
   } catch (e) {
-    btn.disabled = false; btn.textContent = 'Tentar de novo'
-    alert('Não foi possível gerar o Pix. Verifique sua conexão e tente de novo.')
+    area.innerHTML = `
+      <div style="font-size:13px;color:#f87171;margin-bottom:8px;">Não foi possível gerar o Pix.</div>
+      <button class="btn-pay" onclick="payMensalidade()">Tentar de novo</button>`
   }
 }
 

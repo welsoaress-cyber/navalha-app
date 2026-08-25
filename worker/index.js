@@ -34,6 +34,7 @@ export default {
     await sendReminders(env)
     await processExpiredOffers(env)
     await checkBilling(env)
+    await sendWeeklyReports(env)
   }
 }
 
@@ -159,6 +160,15 @@ function addMonths(dateStr, n) {
   return alvo.toISOString().slice(0, 10)
 }
 
+// Mês do aniversário do dono = 10% de desconto na mensalidade
+function valorMensal(shop, plan) {
+  const mesRef = (shop.next_due || todayBR()).slice(5, 7)
+  const aniver = !!(shop.owner_birthday && String(shop.owner_birthday).slice(5, 7) === mesRef)
+  const valor = aniver ? Math.round(plan.monthly * 0.9 * 100) / 100 : plan.monthly
+  return { valor, aniver }
+}
+function fmtValor(v) { return Number.isInteger(v) ? String(v) : v.toFixed(2).replace('.', ',') }
+
 // Gera o Pix da mensalidade (só o valor mensal, sem kit) — válido por 24h
 async function renewPix(request, env) {
   if (!env.MP_ACCESS_TOKEN || !env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
@@ -167,10 +177,11 @@ async function renewPix(request, env) {
   const shopId = body.barbershop_id
   if (!shopId || !/^[a-f0-9-]+$/.test(shopId)) return json({ error: 'bad_request' }, 400)
 
-  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,plan,owner_email`) || []
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,plan,owner_email,next_due,owner_birthday`) || []
   if (!shop) return json({ error: 'not_found' }, 404)
 
   const plan = PLANS[shop.plan] || PLANS.solo
+  const { valor, aniver } = valorMensal(shop, plan)
   const origin = new URL(request.url).origin
   const expStr = new Date(Date.now() + 24 * 3600 * 1000 - 3 * 3600 * 1000).toISOString().replace('Z', '-03:00')
 
@@ -178,8 +189,8 @@ async function renewPix(request, env) {
     method: 'POST',
     headers: { 'X-Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
-      transaction_amount: plan.monthly,
-      description: `Navalha no Bigode — Mensalidade Plano ${plan.name}`,
+      transaction_amount: valor,
+      description: `Navalha no Bigode — Mensalidade Plano ${plan.name}${aniver ? ' (10% aniversário)' : ''}`,
       payment_method_id: 'pix',
       payer: { email: shop.owner_email || 'cliente@navalhanobigode.com.br' },
       external_reference: 'ren:' + shop.id,
@@ -190,12 +201,12 @@ async function renewPix(request, env) {
   const pd = await pr.json()
   if (!pr.ok) return json({ error: 'mp_error', detail: pd && pd.message }, 502)
   const tx = pd.point_of_interaction && pd.point_of_interaction.transaction_data
-  return json({ payment_id: pd.id, amount: plan.monthly, qr_code: tx && tx.qr_code, qr_base64: tx && tx.qr_code_base64 })
+  return json({ payment_id: pd.id, amount: fmtValor(valor), birthday: aniver, qr_code: tx && tx.qr_code, qr_base64: tx && tx.qr_code_base64 })
 }
 
 // Mensalidade paga: empurra o vencimento +1 mês e reativa tudo na hora
 async function renewShop(env, shopId, paymentId) {
-  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,plan,next_due,owner_phone,last_renewal_payment_id`) || []
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,plan,next_due,owner_phone,owner_birthday,last_renewal_payment_id`) || []
   if (!shop) return
   if (shop.last_renewal_payment_id === paymentId) return // webhook repete o aviso; cobra só uma vez
 
@@ -207,8 +218,9 @@ async function renewShop(env, shopId, paymentId) {
     body: JSON.stringify({ status: 'active', next_due: novo, last_renewal_payment_id: paymentId })
   })
   const plan = PLANS[shop.plan] || PLANS.solo
+  const { valor, aniver } = valorMensal(shop, plan)
   await evoSend(env, shop.owner_phone,
-    `✅ *Pagamento recebido!*\n\n💈 ${shop.name}\nMensalidade de R$ ${plan.monthly} confirmada.\nSeu sistema está garantido até *${fmtData(novo)}*. Obrigado! 🤝`)
+    `✅ *Pagamento recebido!*\n\n💈 ${shop.name}\nMensalidade de R$ ${fmtValor(valor)} confirmada.${aniver ? '\n🎂 Com 10% de desconto de aniversário!' : ''}\nSeu sistema está garantido até *${fmtData(novo)}*. Obrigado! 🤝`)
 }
 
 // Roda no cron: avisos 3 dias antes / no dia, bloqueio ao vencer e suspensão após 5 dias
@@ -220,11 +232,14 @@ async function checkBilling(env) {
   const hoje = todayBR()
   const shops = await sb(env,
     `barbershops?status=eq.active&next_due=not.is.null&next_due=lte.${addDays(hoje, 3)}` +
-    `&select=id,name,slug,plan,owner_phone,next_due,billing_notified_3d,billing_notified_due,billing_notified_overdue`)
+    `&select=id,name,slug,plan,owner_phone,next_due,owner_birthday,billing_notified_3d,billing_notified_due,billing_notified_overdue`)
   if (!Array.isArray(shops)) return
 
   for (const shop of shops) {
     const plan = PLANS[shop.plan] || PLANS.solo
+    const { valor, aniver } = valorMensal(shop, plan)
+    const preco = `R$ ${fmtValor(valor)}`
+    const brinde = aniver ? '\n🎂 Mês do seu aniversário: já apliquei *10% de desconto*!' : ''
     const due = shop.next_due
     const diff = diasEntre(due, hoje) // dias até vencer (negativo = vencido)
     const linkPagar = `${shop.slug}.navalhanobigode.com.br/pagar`
@@ -232,24 +247,95 @@ async function checkBilling(env) {
 
     if (diff >= 1 && diff <= 3 && shop.billing_notified_3d !== due) {
       const ok = await evoSend(env, shop.owner_phone,
-        `💈 *${shop.name}*\n\nSua mensalidade do plano ${plan.name} (R$ ${plan.monthly}) vence ${diff === 1 ? '*amanhã*' : `em *${diff} dias*`}, dia ${fmtData(due)}.\n\nPague com 1 toque (Pix):\n${linkPagar}`)
+        `💈 *${shop.name}*\n\nSua mensalidade do plano ${plan.name} (${preco}) vence ${diff === 1 ? '*amanhã*' : `em *${diff} dias*`}, dia ${fmtData(due)}.${brinde}\n\nPague com 1 toque (Pix):\n${linkPagar}`)
       if (ok) await patch({ billing_notified_3d: due })
     } else if (diff === 0 && shop.billing_notified_due !== due) {
       const ok = await evoSend(env, shop.owner_phone,
-        `💈 *${shop.name}*\n\n⚠️ Sua mensalidade (R$ ${plan.monthly}) vence *hoje*, dia ${fmtData(due)}.\n\nPague agora e não perca o acesso ao painel:\n${linkPagar}`)
+        `💈 *${shop.name}*\n\n⚠️ Sua mensalidade (${preco}) vence *hoje*, dia ${fmtData(due)}.${brinde}\n\nPague agora e não perca o acesso ao painel:\n${linkPagar}`)
       if (ok) await patch({ billing_notified_due: due })
     } else if (diff < 0) {
       if (shop.billing_notified_overdue !== due) {
         const ok = await evoSend(env, shop.owner_phone,
-          `💈 *${shop.name}*\n\n🔒 Sua mensalidade venceu dia ${fmtData(due)} e o painel foi *bloqueado* — seus clientes continuam agendando, mas você não vê a agenda.\n\nPague o Pix de R$ ${plan.monthly} e o acesso volta na hora:\n${linkPagar}`)
+          `💈 *${shop.name}*\n\n🔒 Sua mensalidade venceu dia ${fmtData(due)} e o painel foi *bloqueado* — seus clientes continuam agendando, mas você não vê a agenda.\n\nPague o Pix de ${preco} e o acesso volta na hora:\n${linkPagar}`)
         if (ok) await patch({ billing_notified_overdue: due })
       }
       if (diff <= -6) {
         await patch({ status: 'suspended' })
         await evoSend(env, shop.owner_phone,
-          `💈 *${shop.name}*\n\n🚫 Com ${-diff} dias de atraso, sua página de agendamento *saiu do ar* — seus clientes não conseguem mais agendar.\n\nPague o Pix de R$ ${plan.monthly} e tudo volta na hora:\n${linkPagar}`)
+          `💈 *${shop.name}*\n\n🚫 Com ${-diff} dias de atraso, sua página de agendamento *saiu do ar* — seus clientes não conseguem mais agendar.\n\nPague o Pix de ${preco} e tudo volta na hora:\n${linkPagar}`)
       }
     }
+  }
+}
+
+// ── Relatório semanal: toda segunda às 9h, resumo dos últimos 7 dias no WhatsApp do dono ──
+async function sendWeeklyReports(env) {
+  if (!env.SUPABASE_SERVICE_KEY || !env.EVOLUTION_APIKEY) return
+  const nowBR = new Date(Date.now() - 3 * 3600 * 1000)
+  if (nowBR.getUTCDay() !== 1 || nowBR.getUTCHours() !== 9) return // segunda-feira, 9h de Brasília
+
+  const hoje = todayBR()
+  const ini = addDays(hoje, -7), fim = addDays(hoje, -1)          // semana que passou
+  const iniAnt = addDays(hoje, -14), fimAnt = addDays(hoje, -8)   // semana anterior (comparação)
+
+  const shops = await sb(env, `barbershops?status=eq.active&owner_phone=not.is.null&select=id,name,slug,owner_phone,weekly_report_sent`)
+  if (!Array.isArray(shops)) return
+
+  for (const shop of shops) {
+    if (shop.weekly_report_sent === hoje) continue // já enviado nesta segunda
+
+    const bks = await sb(env, `bookings?barbershop_id=eq.${shop.id}&date=gte.${ini}&date=lte.${fim}` +
+      `&status=in.(confirmed,completed,cancelled,no_show)&select=status,services(name,price)`)
+    const antes = await sb(env, `bookings?barbershop_id=eq.${shop.id}&date=gte.${iniAnt}&date=lte.${fimAnt}` +
+      `&status=in.(confirmed,completed,cancelled,no_show)&select=id`)
+    const ofertas = await sb(env, `slot_offers?barbershop_id=eq.${shop.id}&status=eq.accepted&date=gte.${ini}&date=lte.${fim}&select=id`)
+    if (!Array.isArray(bks)) continue
+
+    const total = bks.length
+    const cancelados = bks.filter(b => b.status === 'cancelled').length
+    const atendidos = total - cancelados
+    const pct = n => total ? Math.round(n / total * 100) : 0
+    const reaproveitados = Array.isArray(ofertas) ? ofertas.length : 0
+    const validos = bks.filter(b => b.status !== 'cancelled')
+    const ganho = validos.reduce((s, b) => s + Number(b.services?.price || 0), 0)
+    const media = atendidos ? ganho / atendidos : 0
+
+    // Top 5 serviços mais pedidos
+    const porServico = {}
+    for (const b of validos) {
+      const nome = b.services?.name || 'Outros'
+      porServico[nome] = (porServico[nome] || 0) + 1
+    }
+    const top = Object.entries(porServico).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    const medalhas = ['🥇', '🥈', '🥉', '4º', '5º']
+    const topTxt = top.map(([nome, n], i) =>
+      `${medalhas[i]} ${nome} — ${n} (${atendidos ? Math.round(n / atendidos * 100) : 0}%)`).join('\n')
+
+    // Comparação com a semana anterior
+    const totalAnt = Array.isArray(antes) ? antes.length : 0
+    let comparacao = ''
+    if (totalAnt > 0) {
+      const delta = Math.round((total - totalAnt) / totalAnt * 100)
+      comparacao = delta > 0 ? ` (📈 +${delta}% vs semana anterior)` : delta < 0 ? ` (📉 ${delta}% vs semana anterior)` : ' (= semana anterior)'
+    }
+
+    let text
+    if (total === 0) {
+      text = `📊 *Resumo da semana — ${shop.name}*\n🗓 ${fmtData(ini)} a ${fmtData(fim)}\n\n` +
+        `Nenhum agendamento esta semana. 😕\n\nDica: mande o link ${shop.slug}.navalhanobigode.com.br nos grupos e no status do WhatsApp — é o jeito mais rápido de encher a agenda! 💈`
+    } else {
+      text = `📊 *Resumo da semana — ${shop.name}*\n🗓 ${fmtData(ini)} a ${fmtData(fim)}\n\n` +
+        `📅 Agendamentos: *${total}*${comparacao}\n` +
+        `✅ Atendidos: ${atendidos} (${pct(atendidos)}%)\n` +
+        `❌ Cancelamentos: ${cancelados} (${pct(cancelados)}%)\n` +
+        (reaproveitados ? `⚡ Horários reaproveitados: ${reaproveitados}\n` : '') +
+        (ganho ? `💰 Ganho estimado: R$ ${fmtValor(Math.round(ganho * 100) / 100)} (média R$ ${fmtValor(Math.round(media * 100) / 100)} por atendimento)\n` : '') +
+        (topTxt ? `\n🏆 *Mais pedidos:*\n${topTxt}\n` : '') +
+        `\nBora pra mais uma semana! 💈`
+    }
+
+    const ok = await evoSend(env, shop.owner_phone, text)
+    if (ok) await sb(env, `barbershops?id=eq.${shop.id}`, { method: 'PATCH', body: JSON.stringify({ weekly_report_sent: hoje }) })
   }
 }
 
@@ -260,10 +346,11 @@ async function payPage(request, env) {
   if (!slug && url.hostname.endsWith('.navalhanobigode.com.br')) slug = url.hostname.split('.')[0]
   if (!slug || !/^[a-z0-9-]+$/.test(slug)) return offerHtml(offerMsg('Página não encontrada', 'Confira o link recebido no WhatsApp.'))
 
-  const [shop] = await sb(env, `barbershops?slug=eq.${slug}&select=id,name,plan,next_due`) || []
+  const [shop] = await sb(env, `barbershops?slug=eq.${slug}&select=id,name,plan,next_due,owner_birthday`) || []
   if (!shop) return offerHtml(offerMsg('Barbearia não encontrada', 'Confira o link recebido no WhatsApp.'))
 
   const plan = PLANS[shop.plan] || PLANS.solo
+  const { valor, aniver } = valorMensal(shop, plan)
   const hoje = todayBR()
   const vencida = shop.next_due && shop.next_due < hoje
   const situacao = shop.next_due
@@ -271,7 +358,7 @@ async function payPage(request, env) {
     : ''
 
   return offerHtml(`
-    ${offerMsg(shop.name, `Mensalidade do plano ${plan.name} — <strong style="color:#F8FAFC;">R$ ${plan.monthly}</strong><br>${situacao}`)}
+    ${offerMsg(shop.name, `Mensalidade do plano ${plan.name} — <strong style="color:#F8FAFC;">R$ ${fmtValor(valor)}</strong><br>${situacao}${aniver ? '<br><span style="color:#D4A843;">🎂 Mês do seu aniversário: 10% de desconto aplicado!</span>' : ''}`)}
     <div id="pix" style="margin-top:20px;color:#94A3B8;font-size:14px;">Gerando seu Pix…</div>
     <script>
       const pixEl = document.getElementById('pix')

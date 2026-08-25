@@ -252,6 +252,11 @@
         <div style="font-size:12px;color:var(--ink-3);margin-top:5px;">É por ele que você recebe os avisos do sistema e a mensalidade via Pix.</div>
       </div>
       <div class="form-group">
+        <label class="form-label">Sua data de nascimento</label>
+        <input class="form-input" id="ownerNasc" type="date">
+        <div style="font-size:12px;color:var(--ink-3);margin-top:5px;">🎁 No mês do seu aniversário, sua mensalidade tem <strong style="color:var(--gold,#D4A843);">10% de desconto</strong>.</div>
+      </div>
+      <div class="form-group">
         <label class="form-label">Senha (mínimo 6 caracteres)</label>
         <div style="position:relative;">
           <input class="form-input" id="ownerPass" type="password" placeholder="••••••••" style="padding-right:48px;">
@@ -534,6 +539,7 @@ async function createAccount() {
   const ownerName = document.getElementById('ownerName').value.trim()
   const email     = document.getElementById('ownerEmail').value.trim()
   const zap       = document.getElementById('ownerZap').value.replace(/\D/g,'')
+  const nasc      = document.getElementById('ownerNasc').value || null
   const pass      = document.getElementById('ownerPass').value
 
   if (!ownerName || !email || !zap || !pass) { alert('Preencha todos os campos.'); return }
@@ -584,7 +590,7 @@ async function createAccount() {
 
   // 2. Barbearia
   const { data: shopData, error: shopErr } = await db.from('barbershops').insert({
-    slug, name: shopName, owner_email: email, owner_phone: zap,
+    slug, name: shopName, owner_email: email, owner_phone: zap, owner_birthday: nasc,
     primary_color: color, plan: planKey,
     status: 'trial',
     max_barbers: plan.max_barbers,
