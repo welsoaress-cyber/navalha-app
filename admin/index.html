@@ -18,7 +18,8 @@
   .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
   .section-title { font-family: 'Sora', sans-serif; font-size: 22px; font-weight: 800; }
   .btn-add { background: var(--primary); color: #0F172A; border: none; border-radius: 10px; padding: 12px 20px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
-  .client-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
+  .client-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; display: flex; align-items: center; flex-wrap: wrap; gap: 12px 16px; margin-bottom: 10px; }
+  .client-actions { flex-basis: 100%; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 12px; }
   .client-avatar { width: 48px; height: 48px; border-radius: 12px; background: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; font-family: 'Sora', sans-serif; color: #0F172A; flex-shrink: 0; }
   .client-body { flex: 1; }
   .client-name { font-weight: 700; font-size: 16px; }
