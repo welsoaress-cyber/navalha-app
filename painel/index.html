@@ -919,6 +919,27 @@ async function saveHours(barberId) {
   const btn = document.getElementById('hoursSave')
   btn.disabled = true; btn.textContent = 'Salvando…'
 
+  // O novo horário não pode atropelar agendamentos já confirmados
+  const { data: futuros } = await db.from('bookings')
+    .select('date,start_time,client_name')
+    .eq('barber_id', barberId).eq('status', 'confirmed').gte('date', hojeBR())
+  const conflitos = (futuros || []).filter(bk => {
+    const dow = new Date(bk.date + 'T12:00:00').getDay()
+    const novo = rows.find(r => r.day_of_week === dow)
+    if (!novo) return true // dia foi desligado, mas tem cliente marcado nele
+    const ini = String(bk.start_time).slice(0, 5)
+    return ini < novo.start_time || ini >= novo.end_time
+  })
+  if (conflitos.length) {
+    btn.disabled = false; btn.textContent = 'Salvar horários'
+    const lista = conflitos.slice(0, 5)
+      .map(bk => `• ${dataBR(bk.date)} às ${String(bk.start_time).slice(0, 5)} — ${bk.client_name}`)
+      .join('<br>')
+    errEl.innerHTML = `⚠️ Esse horário novo deixaria cliente de fora:<br>${lista}${conflitos.length > 5 ? '<br>…e mais ' + (conflitos.length - 5) : ''}<br><br>Cancele ou conclua esses agendamentos primeiro — ao cancelar, o cliente é avisado automaticamente no WhatsApp.`
+    errEl.style.display = 'block'
+    return
+  }
+
   const { error: delErr } = await db.from('availability').delete().eq('barber_id', barberId)
   if (delErr) {
     btn.disabled = false; btn.textContent = 'Salvar horários'
