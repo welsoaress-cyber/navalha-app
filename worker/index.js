@@ -16,12 +16,6 @@ export default {
       if (url.pathname === '/api/pix' && request.method === 'POST') return await createPix(request, env)
       if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
       if (url.pathname === '/api/notify' && request.method === 'POST') return await notify(request, env)
-      if (url.pathname === '/api/notify-test') {
-        // Diagnóstico temporário: /api/notify-test?k=CHAVE&phone=55DDDNUMERO
-        if (url.searchParams.get('k') !== env.EVOLUTION_APIKEY) return json({ error: 'unauthorized' }, 401)
-        const ok = await evoSend(env, url.searchParams.get('phone'), '✅ Teste do caminho completo: site → Cloudflare → servidor → WhatsApp. Funcionou!')
-        return json({ sent: ok })
-      }
       if (url.pathname === '/api/pix-status') return await pixStatus(url, env)
       if (url.pathname === '/api/mp-webhook') return await mpWebhook(request, url, env)
     } catch (e) {
