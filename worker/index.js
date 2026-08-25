@@ -333,9 +333,9 @@ async function offerNext(env, win, afterTime) {
     const link = `https://navalha-app.welsoaress.workers.dev/api/offer?t=${offer.token}`
     const text =
       `💈 *${shop.name}*\n\n` +
-      `Olá, ${cand.client_name}! Abriu um horário mais cedo:\n\n` +
-      `🗓 Dia ${fmtData(win.date)}\n` +
-      `🕐 *${String(win.slot_start).slice(0,5)}h* — você está marcado às ${String(cand.start_time).slice(0,5)}h\n\n` +
+      `Olá, ${cand.client_name}! Abriu um horário mais cedo:\n` +
+      `🗓 Dia ${fmtData(win.date)} às 🕐 *${String(win.slot_start).slice(0,5)}h*\n` +
+      `Você está marcado às ${String(cand.start_time).slice(0,5)}h\n\n` +
       `Quer antecipar? Toque e escolha:\n${link}\n\n` +
       `⏱ Oferta válida por 5 minutos.`
     await evoSend(env, cand.client_phone, text)
