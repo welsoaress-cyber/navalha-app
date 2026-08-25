@@ -17,6 +17,9 @@ export default {
       if (url.pathname === '/api/renew-pix' && request.method === 'POST') return await renewPix(request, env)
       if (url.pathname === '/api/trial-activate' && request.method === 'POST') return await trialActivate(request, env)
       if (url.pathname === '/api/trial-invite' && request.method === 'POST') return await trialInvite(request, env)
+      if (url.pathname.startsWith('/late/')) return await latePage(url.pathname.slice(6).split('/')[0], env)
+      if (url.pathname === '/api/late-act' && request.method === 'POST') return await lateAct(request, env)
+      if (url.pathname === '/api/cards-pix' && request.method === 'POST') return await cardsPix(request, env)
       if (url.pathname === '/pagar') return await payPage(request, env)
       if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
       if (url.pathname === '/api/notify' && request.method === 'POST') return await notify(request, env)
@@ -40,6 +43,7 @@ export default {
 
   async scheduled(event, env) {
     await sendReminders(env)
+    await lateTimeouts(env)
     await processExpiredOffers(env)
     await checkBilling(env)
     await sendWeeklyReports(env)
@@ -134,7 +138,63 @@ async function handleApproved(env, d) {
   const ref = d.external_reference || ''
   if (!ref) return
   if (ref.startsWith('ren:')) await renewShop(env, ref.slice(4), String(d.id))
+  else if (ref.startsWith('card:')) await cardsApproved(env, ref.slice(5), String(d.id))
   else await activate(env, ref)
+}
+
+// ── Pedido de cartões pelo painel ──
+// Nunca pagou o kit (entrou pelo teste grátis) → paga o kit cheio do plano, como cliente novo.
+// Já pagou o kit na adesão → paga só a remessa de reposição.
+const CARD_REPO_PRICE = 100
+async function cardsPix(request, env) {
+  if (!env.MP_ACCESS_TOKEN || !env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
+  let body
+  try { body = await request.json() } catch { return json({ error: 'bad_request' }, 400) }
+  const shopId = body.barbershop_id
+  if (!shopId || !/^[a-f0-9-]+$/.test(shopId)) return json({ error: 'bad_request' }, 400)
+
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,plan,kit_paid`) || []
+  if (!shop) return json({ error: 'not_found' }, 404)
+
+  const plan = PLANS[shop.plan] || PLANS.solo
+  const primeiro = !shop.kit_paid
+  const valor = primeiro ? plan.setup : CARD_REPO_PRICE
+  const origin = new URL(request.url).origin
+  const expStr = new Date(Date.now() + 24 * 3600 * 1000 - 3 * 3600 * 1000).toISOString().replace('Z', '-03:00')
+
+  const pr = await mp(env, '/v1/payments', {
+    method: 'POST',
+    headers: { 'X-Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify({
+      transaction_amount: valor,
+      description: primeiro
+        ? `Navalha no Bigode — Kit de Instalação Plano ${plan.name} (cartões com QR Code)`
+        : 'Navalha no Bigode — Remessa de cartões (reposição)',
+      payment_method_id: 'pix',
+      payer: { email: 'pagamentos@navalhanobigode.com.br' },
+      external_reference: 'card:' + shop.id,
+      notification_url: origin + '/api/mp-webhook',
+      date_of_expiration: expStr,
+    })
+  })
+  const pd = await pr.json()
+  if (!pr.ok) return json({ error: 'mp_error', detail: pd && pd.message }, 502)
+  const tx = pd.point_of_interaction && pd.point_of_interaction.transaction_data
+  return json({ payment_id: pd.id, amount: fmtValor(valor), primeiro, qr_code: tx && tx.qr_code, qr_base64: tx && tx.qr_code_base64 })
+}
+
+async function cardsApproved(env, shopId, paymentId) {
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,slug,owner_phone,last_card_payment_id`) || []
+  if (!shop) return
+  if (shop.last_card_payment_id === paymentId) return // webhook repete o aviso; processa uma vez
+  await sb(env, `barbershops?id=eq.${shopId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ kit_paid: true, last_card_payment_id: paymentId })
+  })
+  if (shop.owner_phone) await evoSend(env, shop.owner_phone,
+    `✅ *Pedido de cartões confirmado!*\n\n💈 ${shop.name}\nSeus cartões com QR Code entram em produção e chegam em até *15 dias úteis*. 🚚\n\nEnquanto isso, seu link continua funcionando normalmente.`)
+  if (env.ADMIN_PHONE) await evoSend(env, env.ADMIN_PHONE,
+    `🖨️ *Pedido de cartões pago!*\n\n${shop.name} (${shop.slug}) — hora de produzir a remessa.`)
 }
 
 async function mpWebhook(request, url, env) {
@@ -158,7 +218,7 @@ async function activate(env, shopId) {
   await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(shopId) + '&status=neq.active', {
     method: 'PATCH',
     headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-    body: JSON.stringify({ status: 'active', next_due: addMonths(todayBR(), 1) })
+    body: JSON.stringify({ status: 'active', next_due: addMonths(todayBR(), 1), kit_paid: true })
   })
 }
 
@@ -584,7 +644,7 @@ function fmtData(dateStr) {
 
 async function loadBookingFull(env, bookingId) {
   const r = await fetch(env.SUPABASE_URL + '/rest/v1/bookings?id=eq.' + encodeURIComponent(bookingId) +
-    '&select=*,services(name),barbers(name),barbershops(name,slug)', { headers: sbHeaders(env) })
+    '&select=*,services(name),barbers(name),barbershops(name,slug,owner_phone)', { headers: sbHeaders(env) })
   const rows = await r.json()
   return Array.isArray(rows) ? rows[0] : null
 }
@@ -621,14 +681,104 @@ async function notify(request, env) {
   } else if (body.type === 'booking_done') {
     text = `💈 *${shop.name}*\n\nObrigado pela visita, ${bk.client_name}! ✂️✨\nEsperamos que tenha ficado no capricho.\n\nQuando precisar, é só agendar de novo: ${link}\n\nAté a próxima! 🤝`
   } else if (body.type === 'late_check') {
-    text = `💈 *${shop.name}*\n\nFala, ${bk.client_name}! Seu horário era às *${hora}* e estamos aqui te esperando. 🙏\n\nVocê está vindo?\n\nSe não conseguir chegar hoje, sem problema — é só remarcar por aqui: ${link}`
+    // Atraso em minutos, no fuso de Brasília
+    const nowBR = new Date(Date.now() - 3 * 3600 * 1000)
+    const minAgora = nowBR.getUTCHours() * 60 + nowBR.getUTCMinutes()
+    const [lh, lm] = String(bk.start_time).split(':').map(Number)
+    const atraso = Math.max(1, minAgora - (lh * 60 + lm))
+    text = `💈 *${shop.name}*\n\nOi, ${bk.client_name}! Você tem um horário marcado às *${hora}* — já são *${atraso} min* de atraso.\n\n*Tá chegando?* Toque e responda:\nhttps://${shop.slug}.navalhanobigode.com.br/late/${bk.id}\n\n⏳ Sem resposta em *${LATE_TIMEOUT_MIN} minutos*, o horário pode ser liberado pra outro cliente.`
   } else if (body.type === 'cancel_by_shop') {
     text = `Olá, ${bk.client_name}! Aqui é da ${shop.name}. 💈\n\nInfelizmente precisei desmarcar seu horário de ${fmtData(bk.date)} às ${hora}${bk.services?.name ? ' (' + bk.services.name + ')' : ''} por um imprevisto. Me desculpe!\n\nVocê pode escolher um novo horário por aqui: ${link}`
   }
 
   if (!text) return json({ error: 'bad_type' }, 400)
   const sent = await evoSend(env, bk.client_phone, text)
+  if (sent && body.type === 'late_check') {
+    // Arma o temporizador: o cron libera o horário se não houver resposta no prazo
+    await sb(env, `bookings?id=eq.${bk.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ late_check_sent_at: new Date().toISOString(), late_reply: null })
+    })
+  }
   return json({ sent })
+}
+
+// ── "Tá chegando?": cliente atrasado responde por link; sem resposta, a vaga cascateia ──
+const LATE_TIMEOUT_MIN = 10
+
+async function latePage(bookingId, env) {
+  if (!/^[a-f0-9-]{36}$/.test(bookingId || '')) return offerHtml(offerMsg('Link inválido', 'Confira o link recebido no WhatsApp.'))
+  const bk = await loadBookingFull(env, bookingId)
+  if (!bk || !bk.late_check_sent_at) return offerHtml(offerMsg('Link inválido', 'Confira o link recebido no WhatsApp.'))
+  if (bk.status !== 'confirmed' || bk.late_reply) return offerHtml(offerMsg('Já resolvido', 'Esse horário já foi atualizado. Qualquer coisa, fale com a barbearia.'))
+  const hora = String(bk.start_time).slice(0, 5)
+  const btn = 'width:100%;padding:15px;border-radius:12px;border:none;font-size:16px;font-weight:bold;cursor:pointer;font-family:inherit;'
+  return offerHtml(`
+    ${offerMsg('Tá chegando?', `Seu horário na <strong style="color:#F8FAFC;">${(bk.barbershops || {}).name || 'barbearia'}</strong> era às <strong style="color:#F8FAFC;">${hora}</strong> e estamos te esperando.`)}
+    <div style="margin-top:22px;display:flex;flex-direction:column;gap:10px;">
+      <button style="${btn}background:#D4A843;color:#0F172A;" onclick="resp('sim')">🏃 Tô chegando!</button>
+      <button style="${btn}background:none;border:1.5px solid #334155;color:#94A3B8;" onclick="resp('nao')">😔 Não vou conseguir</button>
+    </div>
+    <script>
+      async function resp(a) {
+        document.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.opacity = 0.5 })
+        try {
+          const r = await fetch('/api/late-act', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ b: '${bookingId}', a }) })
+          const d = await r.json()
+          document.getElementById('box').innerHTML = '<div style="font-size:44px;margin-bottom:12px;">💈</div><h2 style="color:#D4A843;margin:0 0 10px;">' + d.titulo + '</h2><p style="color:#94A3B8;font-size:15px;line-height:1.6;">' + d.texto + '</p>'
+        } catch (e) {
+          alert('Falha de conexão. Tente de novo.')
+          document.querySelectorAll('button').forEach(b => { b.disabled = false; b.style.opacity = 1 })
+        }
+      }
+    </script>`)
+}
+
+async function lateAct(request, env) {
+  let body
+  try { body = await request.json() } catch { return json({ titulo: 'Erro', texto: 'Requisição inválida.' }, 400) }
+  if (!/^[a-f0-9-]{36}$/.test(body.b || '')) return json({ titulo: 'Erro', texto: 'Link inválido.' }, 400)
+  const bk = await loadBookingFull(env, body.b)
+  if (!bk || !bk.late_check_sent_at) return json({ titulo: 'Erro', texto: 'Link inválido.' }, 404)
+  if (bk.status !== 'confirmed' || bk.late_reply) return json({ titulo: 'Já resolvido', texto: 'Esse horário já foi atualizado.' })
+
+  const shop = bk.barbershops || {}
+  const hora = String(bk.start_time).slice(0, 5)
+
+  if (body.a === 'sim') {
+    await sb(env, `bookings?id=eq.${bk.id}`, { method: 'PATCH', body: JSON.stringify({ late_reply: 'coming' }) })
+    if (shop.owner_phone) await evoSend(env, shop.owner_phone, `🏃 *${bk.client_name}* respondeu: tá chegando! (horário das ${hora})`)
+    return json({ titulo: 'Boa! Te esperamos 💈', texto: `Avisamos o barbeiro que você está a caminho. Seu horário das ${hora} está garantido.` })
+  }
+
+  // Não vem: libera o horário e a cascata de antecipação assume
+  await sb(env, `bookings?id=eq.${bk.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'cancelled', late_reply: 'cancel' }) })
+  await offerNext(env, {
+    barbershop_id: bk.barbershop_id, barber_id: bk.barber_id,
+    date: bk.date, slot_start: bk.start_time, slot_end: bk.end_time
+  }, bk.start_time)
+  if (shop.owner_phone) await evoSend(env, shop.owner_phone, `😔 *${bk.client_name}* não vem (horário das ${hora}). Liberei a vaga e já estou oferecendo pros próximos clientes. ⚡`)
+  return json({ titulo: 'Tudo bem! 🤝', texto: `Seu horário foi liberado. Quando quiser, é só remarcar: ${shop.slug}.navalhanobigode.com.br` })
+}
+
+// Cron: atrasado que não respondeu no prazo vira falta e a vaga cascateia sozinha
+async function lateTimeouts(env) {
+  if (!env.SUPABASE_SERVICE_KEY) return
+  const limite = new Date(Date.now() - LATE_TIMEOUT_MIN * 60 * 1000).toISOString()
+  const rows = await sb(env,
+    `bookings?status=eq.confirmed&late_reply=is.null&late_check_sent_at=not.is.null&late_check_sent_at=lt.${encodeURIComponent(limite)}` +
+    `&date=eq.${todayBR()}&select=*,barbershops(name,slug,owner_phone)`)
+  if (!Array.isArray(rows)) return
+  for (const bk of rows) {
+    await sb(env, `bookings?id=eq.${bk.id}&late_reply=is.null`, { method: 'PATCH', body: JSON.stringify({ status: 'no_show', late_reply: 'timeout' }) })
+    await offerNext(env, {
+      barbershop_id: bk.barbershop_id, barber_id: bk.barber_id,
+      date: bk.date, slot_start: bk.start_time, slot_end: bk.end_time
+    }, bk.start_time)
+    const shop = bk.barbershops || {}
+    if (shop.owner_phone) await evoSend(env, shop.owner_phone,
+      `⏳ *${bk.client_name}* não respondeu em ${LATE_TIMEOUT_MIN} min (horário das ${String(bk.start_time).slice(0, 5)}). Marquei como falta, liberei a vaga e já estou oferecendo pros próximos. ⚡`)
+  }
 }
 
 // Lembretes automáticos: roda de 10 em 10 minutos e avisa quem tem horário em ~2h

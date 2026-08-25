@@ -157,6 +157,7 @@
   </div>
   <div class="nav-right">
     <div class="shop-badge" id="shopBadge">…</div>
+    <button class="btn-logout" style="border-color:rgba(212,168,67,0.4);" onclick="pedirCartoes()">💳 Cartões</button>
     <button class="btn-logout" onclick="doLogout()">Sair</button>
   </div>
 </nav>
@@ -431,7 +432,7 @@ async function loadBookings(date) {
       <span class="status-pill status-${bk.status}">${statusLabel(bk.status)}</span>
       ${bk.status === 'confirmed' ? `
         <div class="booking-actions">
-          ${atrasado ? `<button class="action-btn" id="late-${bk.id}" style="border-color:rgba(212,168,67,0.5);color:var(--gold);" onclick="askComing('${bk.id}')">🕐 Tá vindo?</button>` : ''}
+          ${atrasado ? `<button class="action-btn" id="late-${bk.id}" style="border-color:rgba(212,168,67,0.5);color:var(--gold);" onclick="askComing('${bk.id}')">🕐 Tá chegando?</button>` : ''}
           <button class="action-btn done" onclick="updateStatus('${bk.id}','completed')">✓ Concluído</button>
           <button class="action-btn cancel" onclick="updateStatus('${bk.id}','no_show')">Faltou</button>
           <button class="action-btn cancel" onclick="cancelBooking('${bk.id}')">✕ Cancelar</button>
@@ -453,8 +454,75 @@ async function askComing(id) {
     const d = await r.json()
     if (btn) btn.textContent = d.sent ? '✅ Perguntado' : '📵 Não enviou'
   } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = '🕐 Tá vindo?' }
+    if (btn) { btn.disabled = false; btn.textContent = '🕐 Tá chegando?' }
   }
+}
+
+// ── Pedir cartões: Pix na hora (1º kit pra quem entrou pelo teste; reposição pra quem já pagou) ──
+let _cardPoll = null
+function pedirCartoes() {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'cardsModal'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">💳 Pedir cartões com QR Code</div>
+      <p style="font-size:13.5px;color:var(--ink-2);line-height:1.6;margin:0 0 14px;">Cartões físicos com o QR Code da sua barbearia — o cliente escaneia e agenda na hora. Produção e envio em até <strong>15 dias úteis</strong> após o pagamento.</p>
+      <div id="cardsPayArea" style="text-align:center;">
+        <button class="btn-modal-save" style="width:100%;" onclick="gerarPixCartoes()">Gerar Pix do pedido</button>
+      </div>
+      <div class="modal-actions" style="margin-top:14px;">
+        <button class="btn-modal-cancel" style="flex:1;" onclick="fecharCartoes()">Fechar</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+}
+
+function fecharCartoes() {
+  if (_cardPoll) { clearInterval(_cardPoll); _cardPoll = null }
+  document.getElementById('cardsModal')?.remove()
+}
+
+async function gerarPixCartoes() {
+  const area = document.getElementById('cardsPayArea')
+  area.innerHTML = '<span class="spinner"></span> Gerando seu Pix…'
+  try {
+    const r = await fetch('/api/cards-pix', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: shop.id }) })
+    const d = await r.json()
+    if (!d.qr_base64) throw new Error(d.error || 'sem qr')
+    area.innerHTML = `
+      <div style="font-size:12.5px;color:var(--ink-2);margin-bottom:6px;">${d.primeiro ? 'Primeiro kit do plano (cartões + configuração)' : 'Remessa de reposição'}</div>
+      <div style="font-size:17px;font-weight:800;margin-bottom:10px;">Pix de R$ ${d.amount}</div>
+      <img src="data:image/png;base64,${d.qr_base64}" style="width:180px;border-radius:12px;background:#fff;padding:8px;" alt="QR Code Pix">
+      <input id="cecCards" readonly value="${d.qr_code}" style="width:100%;margin-top:10px;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink-2);font-size:11px;">
+      <button class="btn-modal-save" id="btnCopiaCards" style="width:100%;margin-top:8px;" onclick="copiaPixCartoes()">📋 Copiar código Pix</button>
+      <div id="cardsStatus" style="margin-top:10px;font-size:13px;color:var(--ink-2);">⏳ Aguardando pagamento…</div>`
+    _cardPoll = setInterval(async () => {
+      try {
+        const s = await fetch('/api/pix-status?id=' + d.payment_id).then(x => x.json())
+        if (s.status === 'approved') {
+          clearInterval(_cardPoll); _cardPoll = null
+          area.innerHTML = `
+            <div style="font-size:40px;margin-bottom:8px;">✅</div>
+            <div style="font-size:16px;font-weight:800;color:var(--green);margin-bottom:6px;">Pedido confirmado!</div>
+            <div style="font-size:13.5px;color:var(--ink-2);line-height:1.6;">Seus cartões entram em produção e chegam em até 15 dias úteis. Você recebeu a confirmação no WhatsApp.</div>`
+        }
+      } catch (e) {}
+    }, 5000)
+  } catch (e) {
+    area.innerHTML = `
+      <div style="font-size:13px;color:#f87171;margin-bottom:8px;">Não foi possível gerar o Pix.</div>
+      <button class="btn-modal-save" onclick="gerarPixCartoes()">Tentar de novo</button>`
+  }
+}
+
+function copiaPixCartoes() {
+  const cec = document.getElementById('cecCards')
+  cec.select(); cec.setSelectionRange(0, 99999)
+  navigator.clipboard.writeText(cec.value).catch(() => document.execCommand('copy'))
+  const b = document.getElementById('btnCopiaCards')
+  b.textContent = '✅ Copiado!'
+  setTimeout(() => { if (b) b.textContent = '📋 Copiar código Pix' }, 2500)
 }
 
 function statusLabel(s) {

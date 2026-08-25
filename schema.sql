@@ -92,6 +92,18 @@ create table if not exists public.booking_changes (
 );
 
 -- ----------------------------------------
+-- "TÁ CHEGANDO?" (cliente atrasado) — colunas de controle em bookings
+-- ----------------------------------------
+alter table public.bookings add column if not exists late_check_sent_at timestamptz;
+alter table public.bookings add column if not exists late_reply text;  -- coming | cancel | timeout
+
+-- ----------------------------------------
+-- PEDIDO DE CARTÕES — controle em barbershops
+-- ----------------------------------------
+alter table public.barbershops add column if not exists kit_paid boolean default false;
+alter table public.barbershops add column if not exists last_card_payment_id text;
+
+-- ----------------------------------------
 -- CONVITES DE TESTE GRÁTIS (uso único)
 -- Sem policy pública: só o Worker (service key) lê e grava.
 -- ----------------------------------------
