@@ -242,7 +242,7 @@ async function notify(request, env) {
   if (!bk) return json({ sent: false, reason: 'not_found' })
 
   const shop = bk.barbershops || {}
-  const link = `https://${shop.slug}.navalhanobigode.com.br`
+  const link = `${shop.slug}.navalhanobigode.com.br`
   const hora = String(bk.start_time).slice(0, 5)
   const servico = bk.services?.name ? `✂️ ${bk.services.name}\n` : ''
   const barbeiro = bk.barbers?.name ? `💇 Com: ${bk.barbers.name}\n` : ''
@@ -281,7 +281,7 @@ async function sendReminders(env) {
 
     const shop = bk.barbershops || {}
     const hora = String(bk.start_time).slice(0, 5)
-    const text = `⏰ *Lembrete do seu horário!*\n\n💈 ${shop.name}\n${bk.services?.name ? '✂️ ' + bk.services.name + '\n' : ''}📅 Hoje às ${hora}\n\nTe esperamos, ${bk.client_name}! Se não puder vir, remarque em: https://${shop.slug}.navalhanobigode.com.br`
+    const text = `⏰ *Lembrete do seu horário!*\n\n💈 ${shop.name}\n${bk.services?.name ? '✂️ ' + bk.services.name + '\n' : ''}📅 Hoje às ${hora}\n\nTe esperamos, ${bk.client_name}! Se não puder vir, remarque em: ${shop.slug}.navalhanobigode.com.br`
     const ok = await evoSend(env, bk.client_phone, text)
     if (ok) {
       await fetch(env.SUPABASE_URL + '/rest/v1/bookings?id=eq.' + bk.id, {
