@@ -84,6 +84,7 @@
     <div class="nav-sub">Painel Administrativo</div>
   </div>
   <div style="display:flex;gap:8px;">
+    <button class="btn-add" onclick="openConvite()">📣 Convidar</button>
     <button class="action-btn" onclick="openMyPass()">🔑 Trocar senha</button>
     <button class="action-btn" onclick="adminLogout()">Sair</button>
   </div>
@@ -192,6 +193,57 @@ async function saveMyPass() {
 async function adminLogout() {
   await db.auth.signOut()
   initAdmin()
+}
+
+// ── Convidar barbeiro: abre o WhatsApp dele com a mensagem de venda pronta ──
+function conviteTexto(nome) {
+  return `Fala${nome ? ', ' + nome : ''}! Tudo certo? 💈\n\n` +
+    `Deixa eu te mostrar uma parada que eu lancei: um app de agendamento feito só pra barbearia.\n\n` +
+    `Sua barbearia ganha um link próprio, o cliente marca o horário sozinho pelo celular — e um robô no WhatsApp confirma na hora, manda lembrete antes do corte e, se alguém desmarcar, oferece a vaga pro próximo cliente no mesmo minuto. Toda segunda ele ainda te manda o resumo da semana: quantos cortes, quanto entrou e qual corte mais saiu.\n\n` +
+    `Quer ver funcionando? Agenda um teste aqui com o SEU WhatsApp — o robô te responde na hora:\n` +
+    `https://demo.navalhanobigode.com.br\n\n` +
+    `Se curtir, te libero *10 dias de teste grátis* na sua barbearia, com seus clientes de verdade. Depois é R$ 99/mês, sem fidelidade e com garantia de 30 dias.\n\n` +
+    `Me fala o que achou!`
+}
+
+function openConvite() {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'conviteModal'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">📣 Convidar barbeiro</div>
+      <div class="form-group">
+        <label class="form-label">Nome do barbeiro (opcional)</label>
+        <input class="form-input" id="cvNome" type="text" placeholder="Ex.: Marcão">
+      </div>
+      <div class="form-group">
+        <label class="form-label">WhatsApp dele (com DDD)</label>
+        <input class="form-input" id="cvZap" type="tel" placeholder="Ex.: 11 91234-5678" inputmode="tel">
+        <div class="form-hint">Abre o WhatsApp com a mensagem pronta: demo + oferta de 10 dias de teste. Você ainda pode editar antes de enviar.</div>
+      </div>
+      <div id="cvErr" style="display:none;color:var(--red);font-size:13px;margin-bottom:10px;"></div>
+      <div class="modal-actions">
+        <button class="action-btn" style="flex:1;" onclick="document.getElementById('conviteModal').remove()">Cancelar</button>
+        <button class="btn-add" style="flex:1;" onclick="enviarConvite()">Abrir WhatsApp</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+  document.getElementById('cvZap').focus()
+}
+
+function enviarConvite() {
+  const nome = document.getElementById('cvNome').value.trim()
+  let zap = document.getElementById('cvZap').value.replace(/\D/g, '')
+  const errEl = document.getElementById('cvErr')
+  errEl.style.display = 'none'
+  if (zap.length === 10 || zap.length === 11) zap = '55' + zap
+  if (zap.length < 12 || zap.length > 13) {
+    errEl.textContent = 'Número inválido. Use DDD + número (10 ou 11 dígitos).'
+    errEl.style.display = 'block'; return
+  }
+  window.open('https://wa.me/' + zap + '?text=' + encodeURIComponent(conviteTexto(nome)), '_blank')
+  document.getElementById('conviteModal').remove()
 }
 
 const PLAN_CONFIG = {
