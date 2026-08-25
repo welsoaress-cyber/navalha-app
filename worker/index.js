@@ -94,7 +94,8 @@ async function createPix(request, env) {
       transaction_amount: amount,
       description: `Navalha no Bigode — Plano ${plan.name} (1º mês + kit${promoDupla ? ' promo ' + Number(hoje.slice(8, 10)) + '/' + Number(hoje.slice(5, 7)) : ''})`,
       payment_method_id: 'pix',
-      payer: { email: shop.owner_email || 'cliente@navalhanobigode.com.br' },
+      // E-mail interno de propósito: evita o MP mandar e-mails duplicados ao barbeiro (a comunicação é nossa)
+      payer: { email: 'pagamentos@navalhanobigode.com.br' },
       external_reference: shop.id,
       notification_url: origin + '/api/mp-webhook',
       date_of_expiration: expStr,
@@ -205,7 +206,8 @@ async function renewPix(request, env) {
       transaction_amount: valor,
       description: `Navalha no Bigode — Mensalidade Plano ${plan.name}${aniver ? ' (10% aniversário)' : ''}`,
       payment_method_id: 'pix',
-      payer: { email: shop.owner_email || 'cliente@navalhanobigode.com.br' },
+      // E-mail interno de propósito: evita o MP mandar e-mails duplicados ao barbeiro (a comunicação é nossa)
+      payer: { email: 'pagamentos@navalhanobigode.com.br' },
       external_reference: 'ren:' + shop.id,
       notification_url: origin + '/api/mp-webhook',
       date_of_expiration: expStr,
