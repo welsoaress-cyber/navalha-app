@@ -91,10 +91,11 @@ async function createPix(request, env) {
   if (!shop) return json({ error: 'not_found' }, 404)
 
   const plan = PLANS[shop.plan] || PLANS.solo
+  const includeKit = body.include_kit !== false  // default true; false só se enviado explicitamente
   // Datas duplas (1/1, 2/2, … 12/12): kit de instalação pela metade — a mensalidade nunca tem promoção
   const hoje = todayBR()
-  const promoDupla = hoje.slice(8, 10) === hoje.slice(5, 7)
-  const setupCobrado = promoDupla ? Math.round(plan.setup / 2) : plan.setup
+  const promoDupla = includeKit && hoje.slice(8, 10) === hoje.slice(5, 7)
+  const setupCobrado = includeKit ? (promoDupla ? Math.round(plan.setup / 2) : plan.setup) : 0
   const amount = plan.monthly + setupCobrado
   const origin = new URL(request.url).origin
 
@@ -107,11 +108,13 @@ async function createPix(request, env) {
     headers: { 'X-Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
       transaction_amount: amount,
-      description: `Navalha no Bigode — Plano ${plan.name} (1º mês + kit${promoDupla ? ' promo ' + Number(hoje.slice(8, 10)) + '/' + Number(hoje.slice(5, 7)) : ''})`,
+      description: includeKit
+        ? `Navalha no Bigode — Plano ${plan.name} (1º mês + kit${promoDupla ? ' promo ' + Number(hoje.slice(8, 10)) + '/' + Number(hoje.slice(5, 7)) : ''})`
+        : `Navalha no Bigode — Plano ${plan.name} (1º mês, sem kit)`,
       payment_method_id: 'pix',
       // E-mail interno de propósito: evita o MP mandar e-mails duplicados ao barbeiro (a comunicação é nossa)
       payer: { email: 'pagamentos@navalhanobigode.com.br' },
-      external_reference: shop.id,
+      external_reference: includeKit ? shop.id : 'nokit:' + shop.id,
       notification_url: origin + '/api/mp-webhook',
       date_of_expiration: expStr,
     })
@@ -123,7 +126,9 @@ async function createPix(request, env) {
   return json({
     payment_id: pd.id,
     amount,
-    description: `Plano ${plan.name} — 1º mês R$ ${plan.monthly} + Kit R$ ${setupCobrado}`,
+    description: includeKit
+      ? `Plano ${plan.name} — 1º mês R$ ${plan.monthly} + Kit R$ ${setupCobrado}`
+      : `Plano ${plan.name} — 1º mês R$ ${plan.monthly} (sem kit)`,
     promo: promoDupla ? `Promoção ${Number(hoje.slice(8, 10))}/${Number(hoje.slice(5, 7))}: Kit de Instalação com 50% de desconto (de R$ ${plan.setup} por R$ ${setupCobrado})` : null,
     qr_code: tx && tx.qr_code,
     qr_base64: tx && tx.qr_code_base64,
@@ -149,6 +154,7 @@ async function handleApproved(env, d) {
   if (ref.startsWith('ren:')) await renewShop(env, ref.slice(4), String(d.id))
   else if (ref.startsWith('card:')) await cardsApproved(env, ref.slice(5), String(d.id))
   else if (ref.startsWith('pos:')) await posApproved(env, ref.slice(4), String(d.id))
+  else if (ref.startsWith('nokit:')) await activate(env, ref.slice(6), false)
   else await activate(env, ref)
 }
 
@@ -280,11 +286,11 @@ async function mpWebhook(request, url, env) {
   return new Response('ok')
 }
 
-async function activate(env, shopId) {
+async function activate(env, shopId, kitPaid = true) {
   await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(shopId) + '&status=neq.active', {
     method: 'PATCH',
     headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-    body: JSON.stringify({ status: 'active', next_due: addMonths(todayBR(), 1), kit_paid: true, activated_at: new Date().toISOString() })
+    body: JSON.stringify({ status: 'active', next_due: addMonths(todayBR(), 1), kit_paid: kitPaid, activated_at: new Date().toISOString() })
   })
   // WhatsApp de boas-vindas para clientes pagos (trial tem o próprio em trialActivate)
   const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=name,slug,owner_phone,referred_by`) || []
