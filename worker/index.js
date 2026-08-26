@@ -481,11 +481,20 @@ function addMonths(dateStr, n) {
 }
 
 // Mês do aniversário do dono = 10% de desconto na mensalidade
-function valorMensal(shop, plan) {
+function valorMensal(shop, plan, referralCount = 0) {
   const mesRef = (shop.next_due || todayBR()).slice(5, 7)
   const aniver = !!(shop.owner_birthday && String(shop.owner_birthday).slice(5, 7) === mesRef)
-  const valor = aniver ? Math.round(plan.monthly * 0.9 * 100) / 100 : plan.monthly
-  return { valor, aniver }
+  const valorBase = aniver ? Math.round(plan.monthly * 0.9 * 100) / 100 : plan.monthly
+  const refDesc = referralCount > 0 ? Math.min(referralCount * 30, valorBase) : 0
+  const valor = valorBase - refDesc
+  return { valor, aniver, refDesc }
+}
+
+// Conta indicados ativos de uma barbearia (para desconto de indicação)
+async function contarIndicados(env, slug) {
+  if (!slug) return 0
+  const rows = await sb(env, `barbershops?referred_by=eq.${encodeURIComponent(slug)}&status=eq.active&select=id`)
+  return Array.isArray(rows) ? rows.length : 0
 }
 function fmtValor(v) { return Number.isInteger(v) ? String(v) : v.toFixed(2).replace('.', ',') }
 
@@ -497,13 +506,14 @@ async function renewPix(request, env) {
   const shopId = body.barbershop_id
   if (!shopId || !/^[a-f0-9-]+$/.test(shopId)) return json({ error: 'bad_request' }, 400)
 
-  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,plan,owner_email,next_due,owner_birthday`) || []
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,slug,plan,owner_email,next_due,owner_birthday`) || []
   if (!shop) return json({ error: 'not_found' }, 404)
   // Renovação só existe depois da adesão paga (senão daria pra ativar sem pagar o kit)
   if (!shop.next_due) return json({ error: 'not_active' }, 409)
 
   const plan = PLANS[shop.plan] || PLANS.solo
-  const { valor, aniver } = valorMensal(shop, plan)
+  const referralCount = await contarIndicados(env, shop.slug)
+  const { valor, aniver, refDesc } = valorMensal(shop, plan, referralCount)
   const origin = new URL(request.url).origin
   const expStr = new Date(Date.now() + 24 * 3600 * 1000 - 3 * 3600 * 1000).toISOString().replace('Z', '-03:00')
 
@@ -512,7 +522,7 @@ async function renewPix(request, env) {
     headers: { 'X-Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
       transaction_amount: valor,
-      description: `Navalha no Bigode — Mensalidade Plano ${plan.name}${aniver ? ' (10% aniversário)' : ''}`,
+      description: `Navalha no Bigode — Mensalidade Plano ${plan.name}${aniver ? ' (10% aniversário)' : ''}${refDesc > 0 ? ` (−R$${fmtValor(refDesc)} indicação)` : ''}`,
       payment_method_id: 'pix',
       // E-mail interno de propósito: evita o MP mandar e-mails duplicados ao barbeiro (a comunicação é nossa)
       payer: { email: 'pagamentos@navalhanobigode.com.br' },
@@ -524,12 +534,12 @@ async function renewPix(request, env) {
   const pd = await pr.json()
   if (!pr.ok) return json({ error: 'mp_error', detail: pd && pd.message }, 502)
   const tx = pd.point_of_interaction && pd.point_of_interaction.transaction_data
-  return json({ payment_id: pd.id, amount: fmtValor(valor), birthday: aniver, qr_code: tx && tx.qr_code, qr_base64: tx && tx.qr_code_base64 })
+  return json({ payment_id: pd.id, amount: fmtValor(valor), birthday: aniver, referral_discount: refDesc || 0, referral_count: referralCount, qr_code: tx && tx.qr_code, qr_base64: tx && tx.qr_code_base64 })
 }
 
 // Mensalidade paga: empurra o vencimento +1 mês e reativa tudo na hora
 async function renewShop(env, shopId, paymentId) {
-  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,plan,next_due,owner_phone,owner_birthday,last_renewal_payment_id`) || []
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,slug,plan,next_due,owner_phone,owner_birthday,last_renewal_payment_id`) || []
   if (!shop) return
   if (shop.last_renewal_payment_id === paymentId) return // webhook repete o aviso; cobra só uma vez
 
@@ -541,9 +551,11 @@ async function renewShop(env, shopId, paymentId) {
     body: JSON.stringify({ status: 'active', next_due: novo, last_renewal_payment_id: paymentId })
   })
   const plan = PLANS[shop.plan] || PLANS.solo
-  const { valor, aniver } = valorMensal(shop, plan)
+  const referralCount = await contarIndicados(env, shop.slug)
+  const { valor, aniver, refDesc } = valorMensal(shop, plan, referralCount)
+  const indicMsg = refDesc > 0 ? `\n🤝 Desconto de indicação: −R$ ${fmtValor(refDesc)} (${referralCount} indicado${referralCount > 1 ? 's' : ''} ativo${referralCount > 1 ? 's' : ''})` : ''
   await evoSend(env, shop.owner_phone,
-    `✅ *Pagamento recebido!*\n\n💈 ${shop.name}\nMensalidade de R$ ${fmtValor(valor)} confirmada.${aniver ? '\n🎂 Com 10% de desconto de aniversário!' : ''}\nSeu sistema está garantido até *${fmtData(novo)}*. Obrigado! 🤝`)
+    `✅ *Pagamento recebido!*\n\n💈 ${shop.name}\nMensalidade de R$ ${fmtValor(valor)} confirmada.${aniver ? '\n🎂 Com 10% de desconto de aniversário!' : ''}${indicMsg}\nSeu sistema está garantido até *${fmtData(novo)}*. Obrigado! 🤝`)
 }
 
 // ── Onboarding 48h: barbearias que ativaram mas não configuraram serviços/horários ──
@@ -606,9 +618,11 @@ async function checkBilling(env) {
 
   for (const shop of shops) {
     const plan = PLANS[shop.plan] || PLANS.solo
-    const { valor, aniver } = valorMensal(shop, plan)
+    const referralCount = await contarIndicados(env, shop.slug)
+    const { valor, aniver, refDesc } = valorMensal(shop, plan, referralCount)
     const preco = `R$ ${fmtValor(valor)}`
     const brinde = aniver ? '\n🎂 Mês do seu aniversário: já apliquei *10% de desconto*!' : ''
+    const indicBonus = refDesc > 0 ? `\n🤝 Desconto de indicação: −R$ ${fmtValor(refDesc)} (${referralCount} indicado${referralCount > 1 ? 's' : ''} ativo${referralCount > 1 ? 's' : ''})` : ''
     const due = shop.next_due
     const diff = diasEntre(due, hoje) // dias até vencer (negativo = vencido)
     const linkPagar = `${shop.slug}.navalhanobigode.com.br/pagar`
@@ -616,11 +630,11 @@ async function checkBilling(env) {
 
     if (diff >= 1 && diff <= 3 && shop.billing_notified_3d !== due) {
       const ok = await evoSend(env, shop.owner_phone,
-        `💈 *${shop.name}*\n\nSua mensalidade do plano ${plan.name} (${preco}) vence ${diff === 1 ? '*amanhã*' : `em *${diff} dias*`}, dia ${fmtData(due)}.${brinde}\n\nPague com 1 toque (Pix):\n${linkPagar}`)
+        `💈 *${shop.name}*\n\nSua mensalidade do plano ${plan.name} (${preco}) vence ${diff === 1 ? '*amanhã*' : `em *${diff} dias*`}, dia ${fmtData(due)}.${brinde}${indicBonus}\n\nPague com 1 toque (Pix):\n${linkPagar}`)
       if (ok) await patch({ billing_notified_3d: due })
     } else if (diff === 0 && shop.billing_notified_due !== due) {
       const ok = await evoSend(env, shop.owner_phone,
-        `💈 *${shop.name}*\n\n⚠️ Sua mensalidade (${preco}) vence *hoje*, dia ${fmtData(due)}.${brinde}\n\nPague agora e não perca o acesso ao painel:\n${linkPagar}`)
+        `💈 *${shop.name}*\n\n⚠️ Sua mensalidade (${preco}) vence *hoje*, dia ${fmtData(due)}.${brinde}${indicBonus}\n\nPague agora e não perca o acesso ao painel:\n${linkPagar}`)
       if (ok) await patch({ billing_notified_due: due })
     } else if (diff < 0) {
       if (shop.billing_notified_overdue !== due) {
