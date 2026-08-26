@@ -319,6 +319,15 @@
           <div class="access-hint">Senha: a que você criou no cadastro</div>
         </div>
       </div>
+      <!-- Oferta da maquininha (venda casada) — só aparece com a chave POS_OFERTA.ativo ligada -->
+      <div class="access-box" id="posOffer" style="display:none;border:1.5px solid rgba(212,168,67,0.4);">
+        <div class="access-title">💳 Leva a maquininha junto?</div>
+        <p style="font-size:13px;color:var(--ink-2, #94A3B8);margin:-4px 0 10px;">Point do Mercado Pago pra receber no cartão, débito, Pix e aproximação — <strong style="color:#F8FAFC;">sem aluguel e sem mensalidade</strong>. Chega via SEDEX 10 com ativação guiada no WhatsApp.</p>
+        <div id="posArea">
+          <div style="font-size:15px;font-weight:800;margin-bottom:10px;"><span id="posNome"></span> — <span style="color:var(--primary);" id="posPreco"></span> <span style="font-size:12px;color:var(--ink-2,#94A3B8);">(+ frete <span id="posFrete"></span>)</span></div>
+          <button class="btn-copy" onclick="pedirPos()">🛒 Pedir com Pix agora</button>
+        </div>
+      </div>
       <div class="alert-box" id="boxPosPagto">
         ✅ <strong>Seu acesso já está liberado.</strong><br>
         Assim que o pagamento for confirmado, seu app fica ativo para os clientes agendarem.
@@ -676,6 +685,52 @@ async function createAccount() {
   fetch('/api/welcome', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: shopId }) }).catch(() => {})
 }
 
+// ── Maquininha no cadastro (venda casada) ──
+// ⚠️ Espelha as constantes POS/POS_ATIVO do Worker — atualizar os DOIS juntos.
+const POS_OFERTA = { ativo: false, nome: 'Point Pro 3', preco: 119, frete: 25 }
+let _posPoll = null
+
+function mostrarPosOffer() {
+  if (!POS_OFERTA.ativo) return
+  document.getElementById('posNome').textContent = POS_OFERTA.nome
+  document.getElementById('posPreco').textContent = 'R$ ' + POS_OFERTA.preco
+  document.getElementById('posFrete').textContent = 'R$ ' + POS_OFERTA.frete
+  document.getElementById('posOffer').style.display = 'block'
+}
+
+async function pedirPos() {
+  const area = document.getElementById('posArea')
+  area.innerHTML = '<div style="font-size:14px;color:#94A3B8;"><span class="spinner"></span> Gerando o Pix da maquininha…</div>'
+  try {
+    const r = await fetch('/api/pos-pix', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: window._shopId, model: 'pro3' }) })
+    const d = await r.json()
+    if (!d.qr_base64) throw new Error(d.error || 'sem qr')
+    area.innerHTML = `
+      <div style="font-size:15px;font-weight:800;margin-bottom:8px;">Pix de R$ ${d.amount}</div>
+      <img src="data:image/png;base64,${d.qr_base64}" style="width:170px;border-radius:12px;background:#fff;padding:8px;display:block;margin:0 auto 8px;" alt="QR Code Pix">
+      <input id="cecPos" readonly value="${d.qr_code}" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink-2,#94A3B8);font-size:11px;">
+      <button class="btn-copy" style="margin-top:8px;" onclick="copiaPosPix()">📋 Copiar código Pix</button>
+      <div id="posStatus" style="margin-top:8px;font-size:13px;color:#94A3B8;">⏳ Aguardando pagamento…</div>`
+    _posPoll = setInterval(async () => {
+      try {
+        const s = await fetch('/api/pix-status?id=' + d.payment_id).then(x => x.json())
+        if (s.status === 'approved') {
+          clearInterval(_posPoll)
+          area.innerHTML = '<div style="font-size:14px;color:#4ade80;font-weight:700;">✅ Pedido confirmado! Sua maquininha sai via SEDEX 10 — te chamamos no WhatsApp pra combinar a entrega.</div>'
+        }
+      } catch (e) {}
+    }, 5000)
+  } catch (e) {
+    area.innerHTML = '<div style="font-size:13px;color:#f87171;margin-bottom:8px;">Não consegui gerar o Pix.</div><button class="btn-copy" onclick="pedirPos()">🔄 Tentar de novo</button>'
+  }
+}
+
+function copiaPosPix() {
+  const cec = document.getElementById('cecPos')
+  cec.select(); cec.setSelectionRange(0, 99999)
+  navigator.clipboard.writeText(cec.value).catch(() => document.execCommand('copy'))
+}
+
 // ── Teste grátis: ativa a barbearia sem pagamento (10 dias) ──
 async function startTrial(shopId) {
   window._shopId = shopId
@@ -705,6 +760,7 @@ async function startTrial(shopId) {
     if (bp) bp.innerHTML = '✅ <strong>Tudo pronto e funcionando.</strong><br>O robô do WhatsApp já está cuidando da sua agenda.'
     const bc = document.getElementById('boxEmailCartoes')
     if (bc) bc.style.display = 'none'
+    mostrarPosOffer()
   } catch (e) {
     el.innerHTML = '<div class="pix-box"><div style="font-size:14px;color:#f87171;padding:14px 0;">Não consegui ativar o teste automaticamente. Chama a gente no WhatsApp que ativamos na hora!</div><button class="btn-copy" onclick="startTrial(window._shopId)">🔄 Tentar novamente</button></div>'
   }
@@ -799,6 +855,7 @@ function pollPix(paymentId) {
         document.getElementById('pixTimer').textContent = ''
         const el = document.getElementById('payStatus')
         el.innerHTML = '✅ <strong>Pagamento confirmado!</strong> Sua barbearia já está ativa — bom trabalho! 💈'
+        mostrarPosOffer()
         el.style.color = '#22c55e'
       }
     } catch (e) {}

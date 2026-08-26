@@ -27,6 +27,7 @@ export default {
       if (url.pathname === '/api/cancel-act' && request.method === 'POST') return await cancelAct(request, env)
       if (url.pathname === '/api/free-now' && request.method === 'POST') return await freeNow(request, env)
       if (url.pathname === '/api/cards-pix' && request.method === 'POST') return await cardsPix(request, env)
+      if (url.pathname === '/api/pos-pix' && request.method === 'POST') return await posPix(request, env)
       if (url.pathname === '/pagar') return await payPage(request, env)
       if (url.pathname === '/api/welcome' && request.method === 'POST') return await sendWelcome(request, env)
       if (url.pathname === '/api/notify' && request.method === 'POST') return await notify(request, env)
@@ -146,7 +147,61 @@ async function handleApproved(env, d) {
   if (!ref) return
   if (ref.startsWith('ren:')) await renewShop(env, ref.slice(4), String(d.id))
   else if (ref.startsWith('card:')) await cardsApproved(env, ref.slice(5), String(d.id))
+  else if (ref.startsWith('pos:')) await posApproved(env, ref.slice(4), String(d.id))
   else await activate(env, ref)
+}
+
+// ── Maquininha Point oferecida no cadastro (venda casada) ──
+// ⚠️ POS_ATIVO só liga depois de conferir o preço oficial do dia em mercadopago.com.br
+// (regra do programa: revenda nunca abaixo da tabela oficial). Frete = SEDEX estimado.
+const POS_ATIVO = false
+const POS = { pro3: { nome: 'Maquininha Point Pro 3', preco: 119, frete: 25 } }
+const VENDAS_PHONE = '5511954490001' // WhatsApp da operação de maquininhas (público na landing)
+
+async function posPix(request, env) {
+  if (!env.MP_ACCESS_TOKEN || !env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
+  if (!POS_ATIVO) return json({ error: 'disabled' }, 503)
+  let body
+  try { body = await request.json() } catch { return json({ error: 'bad_request' }, 400) }
+  const item = POS[body.model]
+  if (!item || !/^[a-f0-9-]+$/.test(body.barbershop_id || '')) return json({ error: 'bad_request' }, 400)
+
+  const [shop] = await sb(env, `barbershops?id=eq.${body.barbershop_id}&select=id,name`) || []
+  if (!shop) return json({ error: 'not_found' }, 404)
+
+  const amount = item.preco + item.frete
+  const origin = new URL(request.url).origin
+  const expStr = new Date(Date.now() + 24 * 3600 * 1000 - 3 * 3600 * 1000).toISOString().replace('Z', '-03:00')
+  const pr = await mp(env, '/v1/payments', {
+    method: 'POST',
+    headers: { 'X-Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify({
+      transaction_amount: amount,
+      description: `${item.nome} + frete SEDEX`,
+      payment_method_id: 'pix',
+      payer: { email: 'pagamentos@navalhanobigode.com.br' },
+      external_reference: 'pos:' + shop.id + ':' + body.model,
+      notification_url: origin + '/api/mp-webhook',
+      date_of_expiration: expStr,
+    })
+  })
+  const pd = await pr.json()
+  if (!pr.ok) return json({ error: 'mp_error' }, 502)
+  const tx = pd.point_of_interaction && pd.point_of_interaction.transaction_data
+  return json({ payment_id: pd.id, amount: fmtValor(amount), qr_code: tx && tx.qr_code, qr_base64: tx && tx.qr_code_base64 })
+}
+
+async function posApproved(env, refRest, paymentId) {
+  const [shopId, model] = String(refRest).split(':')
+  const item = POS[model] || POS.pro3
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,slug,owner_phone,last_pos_payment_id`) || []
+  if (!shop) return
+  if (shop.last_pos_payment_id === paymentId) return // webhook repete; processa uma vez
+  await sb(env, `barbershops?id=eq.${shopId}`, { method: 'PATCH', body: JSON.stringify({ last_pos_payment_id: paymentId }) })
+  if (shop.owner_phone) await evoSend(env, shop.owner_phone,
+    `🛒 *Pedido confirmado: ${item.nome}!*\n\n💈 ${shop.name}\nSua maquininha sai via *SEDEX 10* — chega rapidinho.\n\n📦 Me responde aqui com o *endereço completo com CEP* pra eu despachar hoje!\n\n🚀 Quando chegar, ativa em 10 minutos com este passo a passo:\nhttps://navalhanobigode.com.br/maquininha/ativar/`)
+  await evoSend(env, env.ADMIN_PHONE || VENDAS_PHONE,
+    `🛒 *VENDA DE MAQUININHA!*\n\n${shop.name} (${shop.slug}) pagou ${item.nome} + frete.\nPega o endereço na conversa do robô e posta via SEDEX 10. 📦`)
 }
 
 // ── Pedido de cartões pelo painel ──

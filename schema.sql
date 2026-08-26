@@ -103,6 +103,7 @@ alter table public.bookings add column if not exists late_reply text;  -- coming
 -- ----------------------------------------
 alter table public.barbershops add column if not exists kit_paid boolean default false;
 alter table public.barbershops add column if not exists last_card_payment_id text;
+alter table public.barbershops add column if not exists last_pos_payment_id text;  -- venda de maquininha no cadastro
 
 -- ----------------------------------------
 -- CONVITES DE TESTE GRÁTIS (uso único)
