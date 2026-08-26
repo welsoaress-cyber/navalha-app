@@ -155,7 +155,10 @@ async function handleApproved(env, d) {
 // ⚠️ POS_ATIVO só liga depois de conferir o preço oficial do dia em mercadopago.com.br
 // (regra do programa: revenda nunca abaixo da tabela oficial). Frete = SEDEX estimado.
 const POS_ATIVO = false
-const POS = { pro3: { nome: 'Maquininha Point Pro 3', preco: 119, frete: 25 } }
+const POS = {
+  pro3:   { nome: 'Maquininha Point Pro 3',   preco: 119, frete: 25 },
+  smart2: { nome: 'Maquininha Point Smart 2', preco: 229, frete: 25 }
+}
 const VENDAS_PHONE = '5511954490001' // WhatsApp da operação de maquininhas (público na landing)
 
 async function posPix(request, env) {
