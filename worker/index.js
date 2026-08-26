@@ -285,6 +285,12 @@ async function activate(env, shopId) {
     headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
     body: JSON.stringify({ status: 'active', next_due: addMonths(todayBR(), 1), kit_paid: true })
   })
+  // WhatsApp de boas-vindas para clientes pagos (trial tem o próprio em trialActivate)
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=name,slug,owner_phone`) || []
+  if (shop?.owner_phone) {
+    await evoSend(env, shop.owner_phone,
+      `✅ *Pagamento confirmado!*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem:\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel:\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nA partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝\n\n💳 *Aproveita e pede sua maquininha* — chip 4G incluso, imprime comprovante, sai SEDEX 10 pra todo Brasil. Só R$89. Me chama aqui se quiser! 📦`)
+  }
 }
 
 // ── Teste grátis de 10 dias (convite do canal direto — código de USO ÚNICO) ──
@@ -434,7 +440,7 @@ async function trialActivate(request, env) {
   })
   if (shop.owner_phone) {
     await evoSend(env, shop.owner_phone,
-      `🎁 *Teste grátis ativado!*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem (manda no grupo, no status, em todo lugar):\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel (agenda e configurações):\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nSeu teste vale até *${fmtData(trialUntil)}*. A partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝`)
+      `🎁 *Teste grátis ativado!*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem (manda no grupo, no status, em todo lugar):\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel (agenda e configurações):\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nSeu teste vale até *${fmtData(trialUntil)}*. A partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝\n\n💳 *Aproveita e pede sua maquininha* — chip 4G incluso, imprime comprovante, sai SEDEX 10 pra todo Brasil. Só R$89. Me chama aqui se quiser! 📦`)
   }
   return json({ ok: true, next_due: trialUntil })
 }
@@ -743,6 +749,11 @@ async function sendWelcome(request, env) {
         <p style="margin:0;font-size:14px;line-height:1.6;color:#F8FAFC;">💳 <strong>Seus cartões estão a caminho!</strong><br>
         <span style="color:#CBD5E1;font-size:13px;">Você vai receber cartões com o QR Code da sua barbearia para distribuir aos clientes. A primeira remessa é por nossa conta — remessas adicionais são cobradas à parte.</span><br><br>
         <span style="color:#CBD5E1;font-size:13px;">🚚 <strong style="color:#F8FAFC;">Prazo de entrega:</strong> impressão e envio em até <strong style="color:#F8FAFC;">15 dias úteis</strong> após a confirmação do pagamento. Enquanto isso, seu app já funciona normalmente.</span></p>
+      </div>
+
+      <div style="background:rgba(43,217,122,0.07);border:1px solid rgba(43,217,122,0.25);border-radius:12px;padding:16px;margin-top:16px;">
+        <p style="margin:0;font-size:14px;line-height:1.6;color:#F8FAFC;">💳 <strong>Quer aceitar cartão no balcão?</strong><br>
+        <span style="color:#CBD5E1;font-size:13px;">Tô com maquininha Point Pro 3 por <strong style="color:#F8FAFC;">R$89</strong> — chip 4G incluso, imprime comprovante e sai SEDEX 10 pra qualquer estado. Responde este e-mail ou chama no WhatsApp!</span></p>
       </div>
 
       <p style="font-size:13px;color:#94A3B8;margin-top:24px;">Dúvidas? Fale com a gente: <a href="https://wa.me/5511954490001" style="color:#D4A843;">WhatsApp</a></p>
