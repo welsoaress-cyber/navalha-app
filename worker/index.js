@@ -299,10 +299,10 @@ async function activate(env, shopId, kitPaid = true) {
   }
 }
 
-// ── Teste grátis de 10 dias (convite do canal direto — código de USO ÚNICO) ──
+// ── 1 mês grátis (convite do canal direto — código de USO ÚNICO) ──
 // Cada convite é gerado pelo admin (/api/trial-invite), vale uma vez e morre ao ser usado.
-// Ao fim do teste, a cobrança normal assume: aviso 3 dias antes, bloqueio no vencimento.
-const TRIAL_DAYS = 10
+// Ao fim do mês grátis, a cobrança normal assume: aviso 3 dias antes, bloqueio no vencimento.
+const TRIAL_DAYS = 30
 const ADMIN_EMAIL = 'welsoaress@gmail.com'
 
 // Valida que a requisição vem do admin logado (token da sessão Supabase)
@@ -961,7 +961,7 @@ async function notify(request, env) {
         `🤝 Agradeço depois do corte e convido o cliente a voltar\n` +
         `📊 Toda segunda te mando o resumo: agendamentos, faturamento e os cortes mais pedidos\n` +
         `📱 E sua barbearia ganha link próprio de agendamento + painel completo\n\n` +
-        `🚀 Fica pronto no MESMO dia, configurado por nós.\nA partir de R$ 99/mês, com 30 dias de garantia:\n👉 cadastro.navalhanobigode.com.br`
+        `🚀 Fica pronto no MESMO dia, configurado por nós.\nR$ 39,90/barbeiro/mês — 1º mês 100% grátis:\n👉 cadastro.navalhanobigode.com.br`
     }
   } else if (body.type === 'booking_done') {
     text = `💈 *${shop.name}*\n\nObrigado pela visita, ${bk.client_name}! ✂️✨\nEsperamos que tenha ficado no capricho.\n\nQuando precisar, é só agendar de novo: ${link}\n\nAté a próxima! 🤝`
