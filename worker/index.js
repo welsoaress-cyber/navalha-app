@@ -3,11 +3,8 @@
 //   MP_ACCESS_TOKEN      — Access Token de produção do Mercado Pago
 //   SUPABASE_SERVICE_KEY — service_role key do Supabase
 
-const PLANS = {
-  solo:   { name: 'Solo',   monthly: 99,  setup: 150 },
-  equipe: { name: 'Equipe', monthly: 149, setup: 300 },
-  black:  { name: 'Black',  monthly: 299, setup: 500 },
-}
+const PRECO_POR_BARBEIRO = 39.90   // R$/barbeiro/mês (a partir do 2º mês)
+const KIT_PRICE          = 150     // kit de cartões com QR Code + configuração (opcional)
 
 export default {
   async fetch(request, env) {
@@ -15,6 +12,7 @@ export default {
     try {
       if (url.pathname === '/api/pix' && request.method === 'POST') return await createPix(request, env)
       if (url.pathname === '/api/renew-pix' && request.method === 'POST') return await renewPix(request, env)
+      if (url.pathname === '/api/activate-free'  && request.method === 'POST') return await activateFree(request, env)
       if (url.pathname === '/api/trial-activate' && request.method === 'POST') return await trialActivate(request, env)
       if (url.pathname === '/api/trial-invite' && request.method === 'POST') return await trialInvite(request, env)
       if (url.pathname === '/api/admin-stats') return await adminStats(request, env)
@@ -84,20 +82,15 @@ async function createPix(request, env) {
   if (!shopId) return json({ error: 'bad_request' }, 400)
 
   // Busca a barbearia — o valor é calculado aqui no servidor, nunca vem do navegador
-  const sr = await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(shopId) + '&select=id,name,plan,owner_email,status', {
+  const sr = await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(shopId) + '&select=id,name,owner_email,status', {
     headers: sbHeaders(env)
   })
   const rows = await sr.json()
   const shop = Array.isArray(rows) ? rows[0] : null
   if (!shop) return json({ error: 'not_found' }, 404)
 
-  const plan = PLANS[shop.plan] || PLANS.solo
-  const includeKit = body.include_kit !== false  // default true; false só se enviado explicitamente
-  // Datas duplas (1/1, 2/2, … 12/12): kit de instalação pela metade — a mensalidade nunca tem promoção
-  const hoje = todayBR()
-  const promoDupla = includeKit && hoje.slice(8, 10) === hoje.slice(5, 7)
-  const setupCobrado = includeKit ? (promoDupla ? Math.round(plan.setup / 2) : plan.setup) : 0
-  const amount = plan.monthly + setupCobrado
+  // Kit de instalação: 1º mês é grátis — a única cobrança no cadastro é o kit (opcional)
+  const amount = KIT_PRICE
   const origin = new URL(request.url).origin
 
   // QR expira em 30 minutos (horário expresso em UTC-3)
@@ -109,13 +102,11 @@ async function createPix(request, env) {
     headers: { 'X-Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
       transaction_amount: amount,
-      description: includeKit
-        ? `Navalha no Bigode — Plano ${plan.name} (1º mês + kit${promoDupla ? ' promo ' + Number(hoje.slice(8, 10)) + '/' + Number(hoje.slice(5, 7)) : ''})`
-        : `Navalha no Bigode — Plano ${plan.name} (1º mês, sem kit)`,
+      description: 'Navalha no Bigode — Kit de Instalação (100 cartões com QR Code + configuração)',
       payment_method_id: 'pix',
       // E-mail interno de propósito: evita o MP mandar e-mails duplicados ao barbeiro (a comunicação é nossa)
       payer: { email: 'pagamentos@navalhanobigode.com.br' },
-      external_reference: includeKit ? shop.id : 'nokit:' + shop.id,
+      external_reference: shop.id,
       notification_url: origin + '/api/mp-webhook',
       date_of_expiration: expStr,
     })
@@ -126,11 +117,8 @@ async function createPix(request, env) {
   const tx = pd.point_of_interaction && pd.point_of_interaction.transaction_data
   return json({
     payment_id: pd.id,
-    amount,
-    description: includeKit
-      ? `Plano ${plan.name} — 1º mês R$ ${plan.monthly} + Kit R$ ${setupCobrado}`
-      : `Plano ${plan.name} — 1º mês R$ ${plan.monthly} (sem kit)`,
-    promo: promoDupla ? `Promoção ${Number(hoje.slice(8, 10))}/${Number(hoje.slice(5, 7))}: Kit de Instalação com 50% de desconto (de R$ ${plan.setup} por R$ ${setupCobrado})` : null,
+    amount: String(amount),
+    description: 'Kit de Instalação — 100 cartões com QR Code + configuração',
     qr_code: tx && tx.qr_code,
     qr_base64: tx && tx.qr_code_base64,
     expires_in: 1800,
@@ -226,12 +214,11 @@ async function cardsPix(request, env) {
   const shopId = body.barbershop_id
   if (!shopId || !/^[a-f0-9-]+$/.test(shopId)) return json({ error: 'bad_request' }, 400)
 
-  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,plan,kit_paid`) || []
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,kit_paid`) || []
   if (!shop) return json({ error: 'not_found' }, 404)
 
-  const plan = PLANS[shop.plan] || PLANS.solo
   const primeiro = !shop.kit_paid
-  const valor = primeiro ? plan.setup : CARD_REPO_PRICE
+  const valor = primeiro ? KIT_PRICE : CARD_REPO_PRICE
   const origin = new URL(request.url).origin
   const expStr = new Date(Date.now() + 24 * 3600 * 1000 - 3 * 3600 * 1000).toISOString().replace('Z', '-03:00')
 
@@ -241,7 +228,7 @@ async function cardsPix(request, env) {
     body: JSON.stringify({
       transaction_amount: valor,
       description: primeiro
-        ? `Navalha no Bigode — Kit de Instalação Plano ${plan.name} (cartões com QR Code)`
+        ? 'Navalha no Bigode — Kit de Instalação (100 cartões com QR Code + configuração)'
         : 'Navalha no Bigode — Remessa de cartões (reposição)',
       payment_method_id: 'pix',
       payer: { email: 'pagamentos@navalhanobigode.com.br' },
@@ -293,11 +280,14 @@ async function activate(env, shopId, kitPaid = true) {
     headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
     body: JSON.stringify({ status: 'active', next_due: addMonths(todayBR(), 1), kit_paid: kitPaid, activated_at: new Date().toISOString() })
   })
-  // WhatsApp de boas-vindas para clientes pagos (trial tem o próprio em trialActivate)
+  // WhatsApp de boas-vindas — mensagem varia conforme o barbeiro pagou ou não o kit
   const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=name,slug,owner_phone,referred_by`) || []
   if (shop?.owner_phone) {
+    const msgBase = kitPaid
+      ? `✅ *Kit confirmado — barbearia no ar!*\n\n💈 ${shop.name} está ativa e seus cartões entram em produção (chegam em até 15 dias úteis).\n\n📲 Link pros seus clientes agendarem:\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel:\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nA partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝`
+      : `🎉 *Boas-vindas! Seu 1º mês é grátis.*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem:\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel:\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nA partir de agora eu confirmo, lembro e cuido da sua agenda. 🤝\n\n💳 *Quer cartões com QR Code pra distribuir?* São 100 cartões por R$150, impressos com o link da sua barbearia. É só pedir pelo painel quando quiser!`
     await evoSend(env, shop.owner_phone,
-      `✅ *Pagamento confirmado!*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem:\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel:\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nA partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝\n\n💳 *Aproveita e pede sua maquininha* — chip 4G incluso, imprime comprovante, sai SEDEX 10 pra todo Brasil. Só R$89. Me chama aqui se quiser! 📦\n\n🤝 *Indica pra um amigo barbeiro e ganha desconto!* Cada indicado que assinar desconta R$30/mês na sua mensalidade.\n\n👉 Toca aqui pra mandar a indicação já com a mensagem pronta:\n${refShareLink(shop.slug)}`)
+      msgBase + `\n\n💳 *Aproveita e pede sua maquininha* — chip 4G incluso, imprime comprovante, sai SEDEX 10 pra todo Brasil. Só R$89. Me chama aqui se quiser! 📦\n\n🤝 *Indica pra um amigo barbeiro e ganha desconto!* Cada indicado que assinar desconta R$30/mês na sua mensalidade.\n\n👉 Toca aqui pra mandar a indicação já com a mensagem pronta:\n${refShareLink(shop.slug)}`)
   }
   // Notifica o indicador quando o indicado vira cliente pago
   if (shop?.referred_by) {
@@ -469,6 +459,20 @@ async function trialActivate(request, env) {
   return json({ ok: true, next_due: trialUntil })
 }
 
+// ── Ativação gratuita (sem kit) — 1º mês grátis, sem Pix ──
+async function activateFree(request, env) {
+  if (!env.SUPABASE_SERVICE_KEY) return json({ error: 'not_configured' }, 503)
+  let body
+  try { body = await request.json() } catch { return json({ error: 'bad_request' }, 400) }
+  const shopId = body.barbershop_id
+  if (!shopId || !/^[a-f0-9-]+$/.test(shopId)) return json({ error: 'bad_request' }, 400)
+  const [shop] = await sb(env, `barbershops?id=eq.${encodeURIComponent(shopId)}&select=id,activated_at`) || []
+  if (!shop) return json({ error: 'not_found' }, 404)
+  if (shop.activated_at) return json({ ok: true, next_due: addMonths(todayBR(), 1) }) // já ativo: idempotente
+  await activate(env, shopId, false)  // kit_paid = false — sem cartões físicos por enquanto
+  return json({ ok: true, next_due: addMonths(todayBR(), 1) })
+}
+
 // ── Sitemap ──
 function sitemap(url) {
   const host = url.hostname
@@ -506,14 +510,21 @@ function addMonths(dateStr, n) {
   return alvo.toISOString().slice(0, 10)
 }
 
-// Mês do aniversário do dono = 10% de desconto na mensalidade
-function valorMensal(shop, plan, referralCount = 0) {
+// Mensalidade: R$39,90 × barbeiros ativos; 10% de desconto no mês do aniversário
+function valorMensal(shop, barberCount, referralCount = 0) {
   const mesRef = (shop.next_due || todayBR()).slice(5, 7)
   const aniver = !!(shop.owner_birthday && String(shop.owner_birthday).slice(5, 7) === mesRef)
-  const valorBase = aniver ? Math.round(plan.monthly * 0.9 * 100) / 100 : plan.monthly
+  const base = Math.round(barberCount * PRECO_POR_BARBEIRO * 100) / 100
+  const valorBase = aniver ? Math.round(base * 0.9 * 100) / 100 : base
   const refDesc = referralCount > 0 ? Math.min(referralCount * 30, valorBase) : 0
-  const valor = valorBase - refDesc
-  return { valor, aniver, refDesc }
+  const valor = Math.max(Math.round((valorBase - refDesc) * 100) / 100, 0)
+  return { valor, aniver, refDesc, barberCount }
+}
+
+// Conta barbeiros ativos de uma barbearia (base do cálculo da mensalidade)
+async function contarBarbeiros(env, shopId) {
+  const rows = await sb(env, `barbers?barbershop_id=eq.${encodeURIComponent(shopId)}&active=eq.true&select=id`)
+  return Array.isArray(rows) && rows.length > 0 ? rows.length : 1
 }
 
 // Conta indicados ativos de uma barbearia (para desconto de indicação)
@@ -532,14 +543,13 @@ async function renewPix(request, env) {
   const shopId = body.barbershop_id
   if (!shopId || !/^[a-f0-9-]+$/.test(shopId)) return json({ error: 'bad_request' }, 400)
 
-  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,slug,plan,owner_email,next_due,owner_birthday`) || []
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,slug,owner_email,next_due,owner_birthday`) || []
   if (!shop) return json({ error: 'not_found' }, 404)
-  // Renovação só existe depois da adesão paga (senão daria pra ativar sem pagar o kit)
   if (!shop.next_due) return json({ error: 'not_active' }, 409)
 
-  const plan = PLANS[shop.plan] || PLANS.solo
+  const barberCount = await contarBarbeiros(env, shopId)
   const referralCount = await contarIndicados(env, shop.slug)
-  const { valor, aniver, refDesc } = valorMensal(shop, plan, referralCount)
+  const { valor, aniver, refDesc } = valorMensal(shop, barberCount, referralCount)
   const origin = new URL(request.url).origin
   const expStr = new Date(Date.now() + 24 * 3600 * 1000 - 3 * 3600 * 1000).toISOString().replace('Z', '-03:00')
 
@@ -548,7 +558,7 @@ async function renewPix(request, env) {
     headers: { 'X-Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
       transaction_amount: valor,
-      description: `Navalha no Bigode — Mensalidade Plano ${plan.name}${aniver ? ' (10% aniversário)' : ''}${refDesc > 0 ? ` (−R$${fmtValor(refDesc)} indicação)` : ''}`,
+      description: `Navalha no Bigode — Mensalidade (${barberCount} barbeiro${barberCount > 1 ? 's' : ''} × R$ ${fmtValor(PRECO_POR_BARBEIRO)})${aniver ? ' — 10% aniversário' : ''}${refDesc > 0 ? ` (−R$${fmtValor(refDesc)} indicação)` : ''}`,
       payment_method_id: 'pix',
       // E-mail interno de propósito: evita o MP mandar e-mails duplicados ao barbeiro (a comunicação é nossa)
       payer: { email: 'pagamentos@navalhanobigode.com.br' },
@@ -560,12 +570,12 @@ async function renewPix(request, env) {
   const pd = await pr.json()
   if (!pr.ok) return json({ error: 'mp_error', detail: pd && pd.message }, 502)
   const tx = pd.point_of_interaction && pd.point_of_interaction.transaction_data
-  return json({ payment_id: pd.id, amount: fmtValor(valor), birthday: aniver, referral_discount: refDesc || 0, referral_count: referralCount, qr_code: tx && tx.qr_code, qr_base64: tx && tx.qr_code_base64 })
+  return json({ payment_id: pd.id, amount: fmtValor(valor), birthday: aniver, referral_discount: refDesc || 0, referral_count: referralCount, barber_count: barberCount, qr_code: tx && tx.qr_code, qr_base64: tx && tx.qr_code_base64 })
 }
 
 // Mensalidade paga: empurra o vencimento +1 mês e reativa tudo na hora
 async function renewShop(env, shopId, paymentId) {
-  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,slug,plan,next_due,owner_phone,owner_birthday,last_renewal_payment_id`) || []
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=id,name,slug,next_due,owner_phone,owner_birthday,last_renewal_payment_id`) || []
   if (!shop) return
   if (shop.last_renewal_payment_id === paymentId) return // webhook repete o aviso; cobra só uma vez
 
@@ -576,9 +586,9 @@ async function renewShop(env, shopId, paymentId) {
     method: 'PATCH',
     body: JSON.stringify({ status: 'active', next_due: novo, last_renewal_payment_id: paymentId })
   })
-  const plan = PLANS[shop.plan] || PLANS.solo
+  const barberCount = await contarBarbeiros(env, shopId)
   const referralCount = await contarIndicados(env, shop.slug)
-  const { valor, aniver, refDesc } = valorMensal(shop, plan, referralCount)
+  const { valor, aniver, refDesc } = valorMensal(shop, barberCount, referralCount)
   const indicMsg = refDesc > 0 ? `\n🤝 Desconto de indicação: −R$ ${fmtValor(refDesc)} (${referralCount} indicado${referralCount > 1 ? 's' : ''} ativo${referralCount > 1 ? 's' : ''})` : ''
   await evoSend(env, shop.owner_phone,
     `✅ *Pagamento recebido!*\n\n💈 ${shop.name}\nMensalidade de R$ ${fmtValor(valor)} confirmada.${aniver ? '\n🎂 Com 10% de desconto de aniversário!' : ''}${indicMsg}\nSeu sistema está garantido até *${fmtData(novo)}*. Obrigado! 🤝`)
@@ -639,13 +649,13 @@ async function checkBilling(env) {
   const hoje = todayBR()
   const shops = await sb(env,
     `barbershops?status=eq.active&next_due=not.is.null&next_due=lte.${addDays(hoje, 3)}` +
-    `&select=id,name,slug,plan,owner_phone,next_due,owner_birthday,billing_notified_3d,billing_notified_due,billing_notified_overdue`)
+    `&select=id,name,slug,owner_phone,next_due,owner_birthday,billing_notified_3d,billing_notified_due,billing_notified_overdue`)
   if (!Array.isArray(shops)) return
 
   for (const shop of shops) {
-    const plan = PLANS[shop.plan] || PLANS.solo
+    const barberCount = await contarBarbeiros(env, shop.id)
     const referralCount = await contarIndicados(env, shop.slug)
-    const { valor, aniver, refDesc } = valorMensal(shop, plan, referralCount)
+    const { valor, aniver, refDesc } = valorMensal(shop, barberCount, referralCount)
     const preco = `R$ ${fmtValor(valor)}`
     const brinde = aniver ? '\n🎂 Mês do seu aniversário: já apliquei *10% de desconto*!' : ''
     const indicBonus = refDesc > 0 ? `\n🤝 Desconto de indicação: −R$ ${fmtValor(refDesc)} (${referralCount} indicado${referralCount > 1 ? 's' : ''} ativo${referralCount > 1 ? 's' : ''})` : ''
@@ -656,7 +666,7 @@ async function checkBilling(env) {
 
     if (diff >= 1 && diff <= 3 && shop.billing_notified_3d !== due) {
       const ok = await evoSend(env, shop.owner_phone,
-        `💈 *${shop.name}*\n\nSua mensalidade do plano ${plan.name} (${preco}) vence ${diff === 1 ? '*amanhã*' : `em *${diff} dias*`}, dia ${fmtData(due)}.${brinde}${indicBonus}\n\nPague com 1 toque (Pix):\n${linkPagar}`)
+        `💈 *${shop.name}*\n\nSua mensalidade (${preco}) vence ${diff === 1 ? '*amanhã*' : `em *${diff} dias*`}, dia ${fmtData(due)}.${brinde}${indicBonus}\n\nPague com 1 toque (Pix):\n${linkPagar}`)
       if (ok) await patch({ billing_notified_3d: due })
     } else if (diff === 0 && shop.billing_notified_due !== due) {
       const ok = await evoSend(env, shop.owner_phone,
@@ -817,7 +827,7 @@ async function sendWelcome(request, env) {
   try { body = await request.json() } catch { return json({ error: 'bad_request' }, 400) }
   if (!body.barbershop_id) return json({ error: 'bad_request' }, 400)
 
-  const sr = await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(body.barbershop_id) + '&select=id,name,slug,plan,owner_email', {
+  const sr = await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(body.barbershop_id) + '&select=id,name,slug,kit_paid,owner_email', {
     headers: sbHeaders(env)
   })
   const rows = await sr.json()
@@ -854,11 +864,16 @@ async function sendWelcome(request, env) {
         <li><strong>Acompanhe a agenda:</strong> os agendamentos aparecem no painel em tempo real.</li>
       </ol>
 
+      ${shop.kit_paid ? `
       <div style="background:rgba(212,168,67,0.1);border:1px solid rgba(212,168,67,0.3);border-radius:12px;padding:16px;margin-top:22px;">
         <p style="margin:0;font-size:14px;line-height:1.6;color:#F8FAFC;">💳 <strong>Seus cartões estão a caminho!</strong><br>
-        <span style="color:#CBD5E1;font-size:13px;">Você vai receber cartões com o QR Code da sua barbearia para distribuir aos clientes. A primeira remessa é por nossa conta — remessas adicionais são cobradas à parte.</span><br><br>
+        <span style="color:#CBD5E1;font-size:13px;">Você vai receber 100 cartões com o QR Code da sua barbearia para distribuir aos clientes.</span><br><br>
         <span style="color:#CBD5E1;font-size:13px;">🚚 <strong style="color:#F8FAFC;">Prazo de entrega:</strong> impressão e envio em até <strong style="color:#F8FAFC;">15 dias úteis</strong> após a confirmação do pagamento. Enquanto isso, seu app já funciona normalmente.</span></p>
-      </div>
+      </div>` : `
+      <div style="background:rgba(212,168,67,0.07);border:1px solid rgba(212,168,67,0.2);border-radius:12px;padding:16px;margin-top:22px;">
+        <p style="margin:0;font-size:14px;line-height:1.6;color:#F8FAFC;">💳 <strong>Quer cartões com QR Code?</strong><br>
+        <span style="color:#CBD5E1;font-size:13px;">São 100 cartões impressos com o link da sua barbearia para distribuir aos clientes. <strong style="color:#F8FAFC;">R$150</strong> — você pode pedir quando quiser pelo seu painel.</span></p>
+      </div>`}
 
       <div style="background:rgba(43,217,122,0.07);border:1px solid rgba(43,217,122,0.25);border-radius:12px;padding:16px;margin-top:16px;">
         <p style="margin:0;font-size:14px;line-height:1.6;color:#F8FAFC;">💳 <strong>Quer aceitar cartão no balcão?</strong><br>
@@ -907,7 +922,7 @@ function fmtData(dateStr) {
 function refShareLink(slug) {
   const url = `https://cadastro.navalhanobigode.com.br/?ref=${slug}`
   const texto = encodeURIComponent(
-    `Ei! Tô usando o Navalha no Bigode na minha barbearia — clientes agendam sozinhos pelo celular, 24h, sem baixar nada. Tem um robô que recupera horário cancelado automaticamente. R$99/mês e 30 dias de garantia.\nCrie a sua: ${url}`)
+    `Ei! Tô usando o Navalha no Bigode na minha barbearia — clientes agendam sozinhos pelo celular, 24h, sem baixar nada. Tem um robô que recupera horário cancelado automaticamente. R$39,90/barbeiro/mês e o 1º mês é grátis.\nCrie a sua: ${url}`)
   return `https://wa.me/?text=${texto}`
 }
 

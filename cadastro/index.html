@@ -152,14 +152,27 @@
 <div class="wrap">
   <div class="card">
 
-    <!-- STEP 1: Plano -->
+    <!-- STEP 1: Preços -->
     <div class="step" id="s1">
       <div class="step-label">Passo 1 de 6</div>
-      <div class="step-title">Escolha seu plano</div>
-      <div class="step-sub">Toque no plano ideal — dá pra mudar depois, quando quiser.</div>
-      <div id="planChooser"></div>
-      <ul class="plan-features" id="planFeatures"></ul>
-      <button class="btn-next" onclick="goStep(2)">Continuar →</button>
+      <div class="step-title">Simples assim</div>
+      <div class="step-sub">Sem planos complicados. Preço justo, transparente e cresce com você.</div>
+      <div style="background:rgba(212,168,67,0.08);border:1.5px solid rgba(212,168,67,0.3);border-radius:16px;padding:20px 18px;margin-bottom:16px;">
+        <div style="font-size:32px;font-weight:800;color:var(--primary);font-family:'Sora',sans-serif;line-height:1;">R$39,90<span style="font-size:15px;font-weight:600;color:var(--ink-2);">/barbeiro/mês</span></div>
+        <div style="font-size:13px;color:var(--ink-2);margin-top:6px;">1 barbeiro = R$39,90 · 3 barbeiros = R$119,70 · 5 barbeiros = R$199,50</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:18px;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--ink-2);"><span style="color:var(--primary);font-weight:700;">✓</span> <strong style="color:var(--ink);">1º mês 100% grátis</strong> — sem cartão, sem pagamento agora</div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--ink-2);"><span style="color:var(--primary);font-weight:700;">✓</span> App de agendamento pelo WhatsApp</div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--ink-2);"><span style="color:var(--primary);font-weight:700;">✓</span> Painel com agenda em tempo real</div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--ink-2);"><span style="color:var(--primary);font-weight:700;">✓</span> Robô recupera horário cancelado automaticamente</div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--ink-2);"><span style="color:var(--primary);font-weight:700;">✓</span> Suporte via WhatsApp</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:20px;font-size:13px;color:var(--ink-2);line-height:1.6;">
+        💳 <strong style="color:var(--ink);">Kit de Instalação opcional: R$150</strong><br>
+        100 cartões físicos com o QR Code da sua barbearia. Você decide se quer agora ou depois pelo painel.
+      </div>
+      <button class="btn-next" onclick="goStep(2)">Testar grátis →</button>
     </div>
 
     <!-- STEP 2: Dados da barbearia -->
@@ -270,7 +283,7 @@
       </div>
       <div class="form-group" id="kitToggleGroup" style="margin-top:6px;">
         <label style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;padding:14px;background:rgba(212,168,67,0.06);border:1.5px solid rgba(212,168,67,0.25);border-radius:12px;">
-          <input type="checkbox" id="kitCheck" checked style="width:18px;height:18px;accent-color:var(--primary);cursor:pointer;flex-shrink:0;margin-top:2px;" onchange="wantKit=this.checked">
+          <input type="checkbox" id="kitCheck" style="width:18px;height:18px;accent-color:var(--primary);cursor:pointer;flex-shrink:0;margin-top:2px;" onchange="wantKit=this.checked">
           <div>
             <div style="font-size:14px;font-weight:700;color:var(--ink);">Kit de Instalação — <span id="kitPriceLabel">R$ 150</span></div>
             <div style="font-size:12px;color:var(--ink-2);margin-top:3px;line-height:1.5;">100 cartões físicos com o QR Code da sua barbearia para distribuir aos clientes. Desmarque se preferir pedir depois pelo painel.</div>
@@ -357,31 +370,13 @@ const PIX_KEY  = 'welsoaress@gmail.com'
 const WHATSAPP = '5511954490001'
 // ───────────────────────────────────────────────────────
 
-const PLANS = {
-  solo:   { name:'Solo',   monthly:99,  setup:150, max_barbers:1, changes_limit:10,   features:['1 profissional','App de agendamento','Painel da barbearia','Agendamentos ilimitados','Suporte via WhatsApp','Configuração feita por nós'] },
-  equipe: { name:'Equipe', monthly:149, setup:300, max_barbers:3, changes_limit:30,   features:['Até 3 profissionais','App de agendamento','Painel da barbearia','Agendamentos ilimitados','Suporte via WhatsApp','Configuração feita por nós','100 cartões com QR Code'] },
-  black:  { name:'Black',  monthly:299, setup:500, max_barbers:5, changes_limit:null, features:['Até 5 profissionais','App de agendamento','Painel da barbearia','Agendamentos ilimitados','Suporte prioritário via WhatsApp','Configuração feita por nós','100 cartões por profissional'] }
-}
+const KIT_PRICE = 150  // R$ — kit de instalação (100 cartões com QR Code)
 
 const params  = new URLSearchParams(location.search)
-let planKey = PLANS[params.get('plano')] ? params.get('plano') : 'equipe'
-let plan    = PLANS[planKey]
 let currentStep = 1
-let wantKit = true
+let wantKit = false  // desmarcado por padrão — 1º mês grátis sem custo adicional
 
-// ── Convite de teste grátis (10 dias): cadastro sem pagamento, cobrança assume no fim ──
-const TRIAL_CODE    = (params.get('teste') || '').trim()
-const REFERRAL_CODE = (params.get('ref')   || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '')
-if (TRIAL_CODE) {
-  document.addEventListener('DOMContentLoaded', () => {
-    const s1 = document.getElementById('s1')
-    if (!s1) return
-    const b = document.createElement('div')
-    b.style.cssText = 'background:rgba(212,168,67,0.12);border:1px solid rgba(212,168,67,0.35);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:14px;color:#F0D080;font-weight:600;'
-    b.textContent = '🎁 Convite especial: 10 dias grátis pra testar com seus clientes de verdade — sem pagar nada agora.'
-    s1.insertBefore(b, s1.firstChild)
-  })
-}
+const REFERRAL_CODE = (params.get('ref') || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '')
 
 // ── Serviços coletados ──
 let services = []
@@ -399,41 +394,6 @@ const DAYS = [
 // Estado inicial: Seg–Sáb ativos, Dom desligado
 const availState = { dom:false, seg:true, ter:true, qua:true, qui:true, sex:true, sab:true }
 const availTime  = { dom:{open:'09:00',close:'18:00'}, seg:{open:'09:00',close:'18:00'}, ter:{open:'09:00',close:'18:00'}, qua:{open:'09:00',close:'18:00'}, qui:{open:'09:00',close:'18:00'}, sex:{open:'09:00',close:'18:00'}, sab:{open:'09:00',close:'14:00'} }
-
-// ── Escolha de plano (Passo 1) ──
-function renderPlanChooser() {
-  document.getElementById('planChooser').innerHTML = Object.entries(PLANS).map(([key, p]) => `
-    <div class="plan-opt${key === planKey ? ' sel' : ''}" onclick="selectPlan('${key}')">
-      ${key === 'equipe' ? '<div class="tag-pop">Mais escolhido</div>' : ''}
-      <div class="radio"></div>
-      <div style="flex:1;">
-        <div class="plan-name" style="font-size:16px;">${p.name}</div>
-        <div style="font-size:12px;color:var(--ink-3);margin-top:2px;">${p.max_barbers === 1 ? '1 profissional' : 'Até ' + p.max_barbers + ' profissionais'}</div>
-      </div>
-      <div class="plan-price" style="text-align:right;">
-        <div class="amount" style="font-size:22px;">R$ ${p.monthly}</div>
-        <div class="period">/mês + ${key === 'solo' ? 'Config. R$' : 'Kit R$'} ${p.setup}</div>
-      </div>
-    </div>`).join('')
-  document.getElementById('planFeatures').innerHTML = plan.features.map(f => `<li>${f}</li>`).join('')
-}
-function selectPlan(key) {
-  planKey = key; plan = PLANS[key]; renderPlanChooser()
-  const el = document.getElementById('kitPriceLabel')
-  if (el) el.textContent = 'R$ ' + plan.setup
-  // Solo não tem cartões físicos — kit checkbox não se aplica
-  const kitGroup = document.getElementById('kitToggleGroup')
-  if (kitGroup) {
-    if (key === 'solo') {
-      kitGroup.style.display = 'none'
-      wantKit = true  // setup de configuração sempre cobrado no Solo
-    } else {
-      kitGroup.style.display = 'block'
-      wantKit = document.getElementById('kitCheck')?.checked ?? true
-    }
-  }
-}
-renderPlanChooser()
 
 
 // ── Gera horários dropdown ──
@@ -620,7 +580,7 @@ async function createAccount() {
         return
       }
       const { data: existing } = await db.from('barbershops')
-        .select('id, slug, name, plan, status, primary_color')
+        .select('id, slug, name, status, primary_color')
         .eq('owner_email', email)
         .maybeSingle()
       if (existing) {
@@ -635,9 +595,11 @@ async function createAccount() {
         document.getElementById('accEmail').textContent = email
         window._appLink = appLink2
         goStep(6)
-        if (TRIAL_CODE) { startTrial(existing.id) } else {
-          startPix(existing.id, wantKit)
-          if (wantKit) renderCardPreview(existing.name, existing.primary_color || '#D4A843', existing.slug)
+        if (wantKit) {
+          startPix(existing.id)
+          renderCardPreview(existing.name, existing.primary_color || '#D4A843', existing.slug)
+        } else {
+          activateFreeFlow(existing.id)
         }
         return
       }
@@ -651,10 +613,8 @@ async function createAccount() {
   // 2. Barbearia
   const { data: shopData, error: shopErr } = await db.from('barbershops').insert({
     slug, name: shopName, owner_email: email, owner_phone: zap, owner_birthday: nasc,
-    primary_color: color, plan: planKey,
+    primary_color: color, plan: 'equipe',
     status: 'trial',
-    max_barbers: plan.max_barbers,
-    changes_limit: plan.changes_limit,
     ...(REFERRAL_CODE ? { referred_by: REFERRAL_CODE } : {})
   }).select('id').single()
 
@@ -701,9 +661,11 @@ async function createAccount() {
   window._appLink = appLink
 
   goStep(6)
-  if (TRIAL_CODE) { startTrial(shopId) } else {
-    startPix(shopId, wantKit)
-    if (wantKit) renderCardPreview(shopName, color, slug)
+  if (wantKit) {
+    startPix(shopId)
+    renderCardPreview(shopName, color, slug)
+  } else {
+    activateFreeFlow(shopId)
   }
   // E-mail de boas-vindas com orientações (não bloqueia o fluxo)
   fetch('/api/welcome', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: shopId }) }).catch(() => {})
@@ -820,41 +782,6 @@ function copiaPosPix() {
   navigator.clipboard.writeText(cec.value).catch(() => document.execCommand('copy'))
 }
 
-// ── Teste grátis: ativa a barbearia sem pagamento (10 dias) ──
-async function startTrial(shopId) {
-  window._shopId = shopId
-  document.getElementById('payAuto').style.display = 'none'
-  const el = document.getElementById('payLoading')
-  el.style.display = 'block'
-  el.innerHTML = '<div class="pix-box"><div style="font-size:15px;color:#94A3B8;padding:20px 0;"><span class="spinner"></span> Ativando seu teste grátis…</div></div>'
-  try {
-    const r = await fetch('/api/trial-activate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: shopId, code: TRIAL_CODE }) })
-    const d = await r.json().catch(() => ({}))
-    if (!r.ok || !d.ok) {
-      if (d.error === 'invalid_invite' || d.error === 'forbidden') {
-        document.getElementById('payLoading').innerHTML = '<div class="pix-box"><div style="font-size:14px;color:#f87171;padding:14px 0;">😕 Este convite já foi usado ou não é mais válido.<br>Cada convite vale pra uma barbearia só — fala com a gente no WhatsApp que geramos um novo pra você!</div></div>'
-        return
-      }
-      throw new Error(d.error || 'falhou')
-    }
-    const ateBr = d.next_due ? d.next_due.slice(8, 10) + '/' + d.next_due.slice(5, 7) : ''
-    document.querySelector('#s6 .step-title').textContent = '🎉 Teste grátis ativado!'
-    document.querySelector('#s6 .step-sub').textContent = 'Sua barbearia já está no ar — sem pagar nada agora.'
-    el.innerHTML = `<div class="pix-box">
-      <div style="font-size:36px;">🎁</div>
-      <div style="font-size:17px;color:#F8FAFC;font-weight:700;margin:8px 0 6px;">10 dias grátis ativados</div>
-      <div style="font-size:14px;color:#94A3B8;line-height:1.6;">Teste válido até <strong style="color:#D4A843;">${ateBr}</strong>. Copie o link abaixo e já manda pros seus clientes agendarem.<br><br>Perto do fim do teste eu te aviso no WhatsApp — se quiser ficar, é R$ ${plan.monthly}/mês direto no painel, <strong style="color:#F8FAFC;">sem taxa de adesão</strong>.</div>
-    </div>`
-    const bp = document.getElementById('boxPosPagto')
-    if (bp) bp.innerHTML = '✅ <strong>Tudo pronto e funcionando.</strong><br>O robô do WhatsApp já está cuidando da sua agenda.'
-    const bc = document.getElementById('boxEmailCartoes')
-    if (bc) bc.style.display = 'none'
-    mostrarPosOffer()
-  } catch (e) {
-    el.innerHTML = '<div class="pix-box"><div style="font-size:14px;color:#f87171;padding:14px 0;">Não consegui ativar o teste automaticamente. Chama a gente no WhatsApp que ativamos na hora!</div><button class="btn-copy" onclick="startTrial(window._shopId)">🔄 Tentar novamente</button></div>'
-  }
-}
-
 // ── Conversões do Google Ads ──
 // Rótulos gerados no painel do Ads (Metas → Conversões). Vazio = não dispara.
 const CONV = {
@@ -869,13 +796,37 @@ function conv(label, params) {
 // ── Pagamento automático via Mercado Pago ──
 let _pollTimer = null, _cdTimer = null
 
-async function startPix(shopId, includeKit = true) {
+// ── Ativação grátis (sem kit) — chama o worker que ativa direto, sem Pix ──
+async function activateFreeFlow(shopId) {
   window._shopId = shopId
-  // Ajusta aviso de e-mail: sem kit, remove menção de cartões
-  const bc = document.getElementById('boxEmailCartoes')
-  if (bc && !includeKit) {
-    bc.innerHTML = '📧 <strong>Enviamos um e-mail</strong> com seus acessos, o link do app e os primeiros passos — guarde ele.\n\n💳 <strong>Cartões com QR Code:</strong> quando quiser, peça pelo painel a qualquer momento.'
+  document.getElementById('payAuto').style.display = 'none'
+  const el = document.getElementById('payLoading')
+  el.style.display = 'block'
+  el.innerHTML = '<div class="pix-box"><div style="font-size:15px;color:#94A3B8;padding:20px 0;"><span class="spinner"></span> Ativando sua barbearia…</div></div>'
+  try {
+    const r = await fetch('/api/activate-free', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barbershop_id: shopId }) })
+    const d = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(d.error || 'falhou')
+    const ateBr = d.next_due ? d.next_due.slice(8, 10) + '/' + d.next_due.slice(5, 7) : ''
+    document.querySelector('#s6 .step-title').textContent = '🎉 Barbearia ativada!'
+    document.querySelector('#s6 .step-sub').textContent = 'Seu 1º mês é grátis — sem pagar nada agora.'
+    el.innerHTML = `<div class="pix-box">
+      <div style="font-size:36px;">🎉</div>
+      <div style="font-size:17px;color:#F8FAFC;font-weight:700;margin:8px 0 6px;">1 mês grátis ativado!</div>
+      <div style="font-size:14px;color:#94A3B8;line-height:1.6;">Sua barbearia está no ar. Copie o link abaixo e já manda pros seus clientes.<br><br>Vence em <strong style="color:#D4A843;">${ateBr}</strong> — antes disso eu te aviso no WhatsApp com o Pix da mensalidade (<strong style="color:#F8FAFC;">R$39,90/barbeiro/mês</strong>).</div>
+    </div>`
+    const bp = document.getElementById('boxPosPagto')
+    if (bp) bp.innerHTML = '✅ <strong>Tudo pronto e funcionando.</strong><br>O robô do WhatsApp já está cuidando da sua agenda.'
+    const bc = document.getElementById('boxEmailCartoes')
+    if (bc) bc.innerHTML = '📧 <strong>Enviamos um e-mail</strong> com seus acessos e primeiros passos — guarde ele.\n\n💳 <strong>Quer cartões físicos?</strong> Peça 100 cartões com QR Code pelo painel a qualquer momento por R$150.'
+    mostrarPosOffer()
+  } catch (e) {
+    el.innerHTML = '<div class="pix-box"><div style="font-size:14px;color:#f87171;padding:14px 0;">Não consegui ativar automaticamente. Chama a gente no WhatsApp que ativamos na hora!</div><button class="btn-copy" onclick="activateFreeFlow(window._shopId)">🔄 Tentar novamente</button></div>'
   }
+}
+
+async function startPix(shopId) {
+  window._shopId = shopId
   const loadEl = document.getElementById('payLoading')
   loadEl.style.display = 'block'
   document.getElementById('payAuto').style.display = 'none'
@@ -884,7 +835,7 @@ async function startPix(shopId, includeKit = true) {
     const r = await fetch('/api/pix', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ barbershop_id: shopId, include_kit: includeKit })
+      body: JSON.stringify({ barbershop_id: shopId })
     })
     const d = await r.json().catch(() => ({}))
     if (!r.ok || !d.qr_base64 || !d.qr_code) { pixFail(); return }
@@ -945,7 +896,7 @@ function pollPix(paymentId) {
       if (d.status === 'approved') {
         clearInterval(_pollTimer)
         clearInterval(_cdTimer)
-        if (!window._convPago) { window._convPago = true; conv(CONV.pago, { value: window._pixAmount || 249, currency: 'BRL' }) }
+        if (!window._convPago) { window._convPago = true; conv(CONV.pago, { value: window._pixAmount || KIT_PRICE, currency: 'BRL' }) }
         document.getElementById('pixTimer').textContent = ''
         const el = document.getElementById('payStatus')
         el.innerHTML = '✅ <strong>Pagamento confirmado!</strong> Sua barbearia já está ativa — bom trabalho! 💈'
