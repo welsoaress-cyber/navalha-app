@@ -360,7 +360,8 @@ let plan    = PLANS[planKey]
 let currentStep = 1
 
 // ── Convite de teste grátis (10 dias): cadastro sem pagamento, cobrança assume no fim ──
-const TRIAL_CODE = (params.get('teste') || '').trim()
+const TRIAL_CODE    = (params.get('teste') || '').trim()
+const REFERRAL_CODE = (params.get('ref')   || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '')
 if (TRIAL_CODE) {
   document.addEventListener('DOMContentLoaded', () => {
     const s1 = document.getElementById('s1')
@@ -628,7 +629,8 @@ async function createAccount() {
     primary_color: color, plan: planKey,
     status: 'trial',
     max_barbers: plan.max_barbers,
-    changes_limit: plan.changes_limit
+    changes_limit: plan.changes_limit,
+    ...(REFERRAL_CODE ? { referred_by: REFERRAL_CODE } : {})
   }).select('id').single()
 
   if (shopErr) {

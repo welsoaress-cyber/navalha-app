@@ -286,10 +286,18 @@ async function activate(env, shopId) {
     body: JSON.stringify({ status: 'active', next_due: addMonths(todayBR(), 1), kit_paid: true })
   })
   // WhatsApp de boas-vindas para clientes pagos (trial tem o próprio em trialActivate)
-  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=name,slug,owner_phone`) || []
+  const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=name,slug,owner_phone,referred_by`) || []
   if (shop?.owner_phone) {
     await evoSend(env, shop.owner_phone,
-      `✅ *Pagamento confirmado!*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem:\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel:\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nA partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝\n\n💳 *Aproveita e pede sua maquininha* — chip 4G incluso, imprime comprovante, sai SEDEX 10 pra todo Brasil. Só R$89. Me chama aqui se quiser! 📦`)
+      `✅ *Pagamento confirmado!*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem:\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel:\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nA partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝\n\n💳 *Aproveita e pede sua maquininha* — chip 4G incluso, imprime comprovante, sai SEDEX 10 pra todo Brasil. Só R$89. Me chama aqui se quiser! 📦\n\n🤝 *Indica pra um amigo barbeiro e ganha desconto!* Cada indicado que assinar desconta R$30/mês na sua mensalidade:\nhttps://cadastro.navalhanobigode.com.br/?ref=${shop.slug}`)
+  }
+  // Notifica o indicador quando o indicado vira cliente pago
+  if (shop?.referred_by) {
+    const [referrer] = await sb(env, `barbershops?slug=eq.${encodeURIComponent(shop.referred_by)}&select=name,slug,owner_phone`) || []
+    if (referrer?.owner_phone) {
+      await evoSend(env, referrer.owner_phone,
+        `🎉 *Indicação confirmada!*\n\nSua indicação *${shop.name}* acabou de assinar o Navalha!\n\nO desconto de R$30 cai na sua próxima mensalidade automaticamente. Continue indicando — cada um conta! 💪\n\nSeu link de indicação:\nhttps://cadastro.navalhanobigode.com.br/?ref=${referrer.slug}`)
+    }
   }
 }
 
@@ -407,7 +415,7 @@ async function trialActivate(request, env) {
   if (!body.barbershop_id || !body.code) return json({ error: 'forbidden' }, 403)
 
   const r = await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(body.barbershop_id) +
-    '&select=id,slug,name,status,next_due,owner_phone', { headers: sbHeaders(env) })
+    '&select=id,slug,name,status,next_due,owner_phone,referred_by', { headers: sbHeaders(env) })
   const rows = await r.json()
   const shop = Array.isArray(rows) ? rows[0] : null
   if (!shop) return json({ error: 'not_found' }, 404)
@@ -440,7 +448,15 @@ async function trialActivate(request, env) {
   })
   if (shop.owner_phone) {
     await evoSend(env, shop.owner_phone,
-      `🎁 *Teste grátis ativado!*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem (manda no grupo, no status, em todo lugar):\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel (agenda e configurações):\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nSeu teste vale até *${fmtData(trialUntil)}*. A partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝\n\n💳 *Aproveita e pede sua maquininha* — chip 4G incluso, imprime comprovante, sai SEDEX 10 pra todo Brasil. Só R$89. Me chama aqui se quiser! 📦`)
+      `🎁 *Teste grátis ativado!*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem (manda no grupo, no status, em todo lugar):\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel (agenda e configurações):\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nSeu teste vale até *${fmtData(trialUntil)}*. A partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝\n\n💳 *Aproveita e pede sua maquininha* — chip 4G incluso, imprime comprovante, sai SEDEX 10 pra todo Brasil. Só R$89. Me chama aqui se quiser! 📦\n\n🤝 *Indica pra um amigo barbeiro e ganha desconto!* Cada indicado que assinar desconta R$30/mês na sua mensalidade:\nhttps://cadastro.navalhanobigode.com.br/?ref=${shop.slug}`)
+  }
+  // Notifica o indicador quando o indicado ativa o teste
+  if (shop.referred_by) {
+    const [referrer] = await sb(env, `barbershops?slug=eq.${encodeURIComponent(shop.referred_by)}&select=name,slug,owner_phone`) || []
+    if (referrer?.owner_phone) {
+      await evoSend(env, referrer.owner_phone,
+        `🎉 *Sua indicação chegou!*\n\n*${shop.name}* acabou de ativar o teste grátis do Navalha pelo seu link!\n\nSe virar cliente pago, R$30 cai direto na sua próxima mensalidade. Continue indicando! 💪\n\nSeu link de indicação:\nhttps://cadastro.navalhanobigode.com.br/?ref=${referrer.slug}`)
+    }
   }
   return json({ ok: true, next_due: trialUntil })
 }
