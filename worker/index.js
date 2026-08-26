@@ -152,12 +152,12 @@ async function handleApproved(env, d) {
 }
 
 // ── Maquininha Point oferecida no cadastro (venda casada) ──
-// ⚠️ POS_ATIVO só liga depois de conferir o preço oficial do dia em mercadopago.com.br
-// (regra do programa: revenda nunca abaixo da tabela oficial). Frete = SEDEX estimado.
-const POS_ATIVO = false
+// Preços conferidos no portal do programa de revendedores (preço unitário do kit x2).
+// Frete = SEDEX 10 estimado. Atualizar aqui + cadastro/index.html juntos.
+const POS_ATIVO = true
 const POS = {
-  pro3:   { nome: 'Maquininha Point Pro 3',   preco: 119, frete: 25 },
-  smart2: { nome: 'Maquininha Point Smart 2', preco: 229, frete: 25 }
+  pro3:   { nome: 'Maquininha Point Pro 3',   preco: 89,  frete: 25 },
+  smart2: { nome: 'Maquininha Point Smart 2', preco: 199, frete: 25 }
 }
 const VENDAS_PHONE = '5511954490001' // WhatsApp da operação de maquininhas (público na landing)
 
