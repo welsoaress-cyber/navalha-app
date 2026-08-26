@@ -154,6 +154,7 @@
     <div class="nav-tab active" onclick="switchTab('agenda')">Agenda</div>
     <div class="nav-tab" onclick="switchTab('servicos')">Serviços</div>
     <div class="nav-tab" onclick="switchTab('barbeiros')">Equipe</div>
+    <div class="nav-tab" onclick="switchTab('comissoes')">Comissões</div>
   </div>
   <div class="nav-right">
     <div class="shop-badge" id="shopBadge">…</div>
@@ -300,7 +301,7 @@ function copiaPix() {
 function switchTab(tab) {
   currentTab = tab
   document.querySelectorAll('.nav-tab').forEach((el, i) => {
-    el.classList.toggle('active', ['agenda','servicos','barbeiros'][i] === tab)
+    el.classList.toggle('active', ['agenda','servicos','barbeiros','comissoes'][i] === tab)
   })
   renderTab(tab)
 }
@@ -309,6 +310,7 @@ function renderTab(tab) {
   if (tab === 'agenda') renderAgenda()
   else if (tab === 'servicos') renderServicos()
   else if (tab === 'barbeiros') renderBarbeiros()
+  else if (tab === 'comissoes') renderComissoes()
 }
 
 async function renderAgenda() {
@@ -1149,6 +1151,180 @@ async function deleteBarber(id) {
 }
 
 function closeModal(id) { document.getElementById(id)?.remove() }
+
+// ── Comissões por barbeiro ──
+let commMonth = new Date().toISOString().slice(0, 7) // YYYY-MM
+
+const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+
+function fmtNum(v) {
+  return Number(v || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+}
+
+async function renderComissoes() {
+  const content = document.getElementById('content')
+  content.innerHTML = `
+    <div class="section-header" style="margin-bottom:20px;">
+      <div class="section-title">Comissões</div>
+      <input class="date-input" type="month" id="commMonthInput" value="${commMonth}" onchange="changeCommMonth(this.value)">
+    </div>
+    <div id="commContent"><div class="loading-overlay"><div class="spinner"></div> Carregando…</div></div>`
+  await loadComissoes()
+}
+
+function changeCommMonth(v) {
+  commMonth = v
+  loadComissoes()
+}
+
+async function loadComissoes() {
+  const [ano, mes] = commMonth.split('-').map(Number)
+  const from = `${commMonth}-01`
+  const lastDay = new Date(ano, mes, 0).getDate()
+  const to = `${commMonth}-${String(lastDay).padStart(2, '0')}`
+  const el = document.getElementById('commContent')
+  if (!el) return
+  el.innerHTML = '<div class="loading-overlay"><div class="spinner"></div> Calculando…</div>'
+
+  const { data: bks } = await db.from('bookings')
+    .select('barber_id, barbers(id, name, commission_pct), services(price)')
+    .eq('barbershop_id', shop.id)
+    .in('status', ['confirmed', 'completed'])
+    .gte('date', from)
+    .lte('date', to)
+
+  if (!bks) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erro ao carregar</div></div>'
+    return
+  }
+
+  // Agrega por barbeiro
+  const byBarber = {}
+  for (const bk of bks) {
+    const bid = bk.barber_id
+    if (!byBarber[bid]) {
+      byBarber[bid] = {
+        id: bid,
+        name: bk.barbers?.name || '—',
+        commission_pct: bk.barbers?.commission_pct ?? 50,
+        count: 0,
+        revenue: 0
+      }
+    }
+    byBarber[bid].count++
+    byBarber[bid].revenue += Number(bk.services?.price || 0)
+  }
+
+  // Garante que barbeiros sem agendamento no mês também aparecem
+  for (const b of barbers.filter(b => b.active)) {
+    if (!byBarber[b.id]) {
+      byBarber[b.id] = {
+        id: b.id,
+        name: b.name,
+        commission_pct: b.commission_pct ?? 50,
+        count: 0,
+        revenue: 0
+      }
+    }
+  }
+
+  const rows = Object.values(byBarber).sort((a, b) => b.revenue - a.revenue)
+  const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0)
+  const totalComm = rows.reduce((s, r) => s + r.revenue * r.commission_pct / 100, 0)
+  const mesNome = MESES[mes - 1]
+
+  el.innerHTML = `
+    <div class="stats-row" style="margin-bottom:20px;">
+      <div class="stat-card">
+        <div class="stat-label">Faturamento — ${mesNome}</div>
+        <div class="stat-value gold">R$ ${fmtNum(totalRevenue)}</div>
+        <div class="stat-sub">${rows.reduce((s, r) => s + r.count, 0)} atendimentos</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total a pagar</div>
+        <div class="stat-value" style="color:var(--red);">R$ ${fmtNum(totalComm)}</div>
+        <div class="stat-sub">em comissões</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Lucro líquido</div>
+        <div class="stat-value" style="color:var(--green);">R$ ${fmtNum(totalRevenue - totalComm)}</div>
+        <div class="stat-sub">após comissões</div>
+      </div>
+    </div>
+    <div id="commTable">${rows.map(r => commRow(r)).join('')}</div>`
+}
+
+function commRow(r) {
+  const comm = r.revenue * r.commission_pct / 100
+  return `
+    <div class="barber-card" id="crow-${r.id}">
+      <div class="barber-avatar">💈</div>
+      <div class="service-body" style="flex:1;min-width:0;">
+        <div class="service-name">${r.name}</div>
+        <div class="service-detail">${r.count} atendimento${r.count !== 1 ? 's' : ''} · faturou R$ ${fmtNum(r.revenue)}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;flex-shrink:0;">
+        <div style="text-align:right;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--ink-2);margin-bottom:2px;">Comissão</div>
+          <div style="font-family:'Sora',sans-serif;font-size:22px;font-weight:800;color:var(--primary);">${r.commission_pct}%</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--ink-2);margin-bottom:2px;">A pagar</div>
+          <div style="font-family:'Sora',sans-serif;font-size:22px;font-weight:800;color:var(--red);">R$ ${fmtNum(comm)}</div>
+        </div>
+        <button class="action-btn" onclick="editComissao('${r.id}', ${r.commission_pct}, '${r.name.replace(/'/g, "\\'")}')">✏️ %</button>
+      </div>
+    </div>`
+}
+
+function editComissao(barberId, current, name) {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'commModal'
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:360px;">
+      <div class="modal-title">% Comissão — ${name}</div>
+      <div class="form-group">
+        <label class="form-label">Percentual de comissão</label>
+        <input class="form-input" id="commPct" type="number" value="${current}" min="0" max="100" step="1" placeholder="Ex: 50">
+        <div class="form-hint">Porcentagem do valor do serviço que vai pro profissional. Ex: 50 = metade do valor cobrado.</div>
+      </div>
+      <div id="commErr" style="display:none;color:#f87171;font-size:13px;margin-bottom:8px;"></div>
+      <div class="modal-actions">
+        <button class="btn-modal-cancel" onclick="closeModal('commModal')">Cancelar</button>
+        <button class="btn-modal-save" id="commSave" onclick="saveComissao('${barberId}')">Salvar</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+  document.getElementById('commPct').focus()
+  document.getElementById('commPct').select()
+}
+
+async function saveComissao(barberId) {
+  const pct = parseFloat(document.getElementById('commPct').value)
+  const errEl = document.getElementById('commErr')
+  errEl.style.display = 'none'
+  if (isNaN(pct) || pct < 0 || pct > 100) {
+    errEl.textContent = 'Informe um valor entre 0 e 100.'
+    errEl.style.display = 'block'; return
+  }
+  const btn = document.getElementById('commSave')
+  btn.disabled = true; btn.textContent = 'Salvando…'
+
+  const { error } = await db.from('barbers').update({ commission_pct: pct }).eq('id', barberId)
+  if (error) {
+    btn.disabled = false; btn.textContent = 'Salvar'
+    errEl.textContent = 'Erro ao salvar: ' + error.message
+    errEl.style.display = 'block'; return
+  }
+
+  // Atualiza cache local
+  const b = barbers.find(x => x.id === barberId)
+  if (b) b.commission_pct = pct
+
+  closeModal('commModal')
+  loadComissoes()
+}
 
 async function doLogout() {
   await db.auth.signOut()
