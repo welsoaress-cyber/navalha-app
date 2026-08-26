@@ -37,6 +37,7 @@ export default {
       if (url.pathname.startsWith('/o/')) return await offerPage(url.pathname.slice(3).split('/')[0], 'code', env)
       if (url.pathname === '/api/pix-status') return await pixStatus(url, env)
       if (url.pathname === '/api/mp-webhook') return await mpWebhook(request, url, env)
+      if (url.pathname === '/sitemap.xml') return sitemap(url)
     } catch (e) {
       return json({ error: 'internal', detail: String(e) }, 500)
     }
@@ -466,6 +467,31 @@ async function trialActivate(request, env) {
     }
   }
   return json({ ok: true, next_due: trialUntil })
+}
+
+// ── Sitemap ──
+function sitemap(url) {
+  const host = url.hostname
+  // Para o domínio cadastro, aponta só o cadastro.
+  // Para qualquer outro (landing, subdomínios), lista as rotas públicas deste worker.
+  const urls = host === 'cadastro.navalhanobigode.com.br'
+    ? [`https://${host}/`]
+    : [
+        `https://navalhanobigode.com.br/`,
+        `https://cadastro.navalhanobigode.com.br/`,
+      ]
+  const xml = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ...urls.map(u => `  <url><loc>${u}</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>`),
+    '</urlset>',
+  ].join('\n')
+  return new Response(xml, {
+    headers: {
+      'Content-Type': 'application/xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400',
+    }
+  })
 }
 
 // ── Cobrança mensal via Pix ──

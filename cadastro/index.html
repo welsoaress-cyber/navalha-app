@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Criar minha barbearia — Navalha no Bigode</title>
+<title>Crie sua barbearia com agendamento automático pelo WhatsApp — Navalha no Bigode</title>
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18408907250"></script>
@@ -268,7 +268,7 @@
           <button type="button" onclick="togglePass()" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--ink-3);font-size:18px;padding:4px;" id="btnPass">👁</button>
         </div>
       </div>
-      <div class="form-group" style="margin-top:6px;">
+      <div class="form-group" id="kitToggleGroup" style="margin-top:6px;">
         <label style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;padding:14px;background:rgba(212,168,67,0.06);border:1.5px solid rgba(212,168,67,0.25);border-radius:12px;">
           <input type="checkbox" id="kitCheck" checked style="width:18px;height:18px;accent-color:var(--primary);cursor:pointer;flex-shrink:0;margin-top:2px;" onchange="wantKit=this.checked">
           <div>
@@ -412,7 +412,7 @@ function renderPlanChooser() {
       </div>
       <div class="plan-price" style="text-align:right;">
         <div class="amount" style="font-size:22px;">R$ ${p.monthly}</div>
-        <div class="period">/mês + Kit R$ ${p.setup}</div>
+        <div class="period">/mês + ${key === 'solo' ? 'Config. R$' : 'Kit R$'} ${p.setup}</div>
       </div>
     </div>`).join('')
   document.getElementById('planFeatures').innerHTML = plan.features.map(f => `<li>${f}</li>`).join('')
@@ -421,6 +421,17 @@ function selectPlan(key) {
   planKey = key; plan = PLANS[key]; renderPlanChooser()
   const el = document.getElementById('kitPriceLabel')
   if (el) el.textContent = 'R$ ' + plan.setup
+  // Solo não tem cartões físicos — kit checkbox não se aplica
+  const kitGroup = document.getElementById('kitToggleGroup')
+  if (kitGroup) {
+    if (key === 'solo') {
+      kitGroup.style.display = 'none'
+      wantKit = true  // setup de configuração sempre cobrado no Solo
+    } else {
+      kitGroup.style.display = 'block'
+      wantKit = document.getElementById('kitCheck')?.checked ?? true
+    }
+  }
 }
 renderPlanChooser()
 
@@ -860,6 +871,11 @@ let _pollTimer = null, _cdTimer = null
 
 async function startPix(shopId, includeKit = true) {
   window._shopId = shopId
+  // Ajusta aviso de e-mail: sem kit, remove menção de cartões
+  const bc = document.getElementById('boxEmailCartoes')
+  if (bc && !includeKit) {
+    bc.innerHTML = '📧 <strong>Enviamos um e-mail</strong> com seus acessos, o link do app e os primeiros passos — guarde ele.\n\n💳 <strong>Cartões com QR Code:</strong> quando quiser, peça pelo painel a qualquer momento.'
+  }
   const loadEl = document.getElementById('payLoading')
   loadEl.style.display = 'block'
   document.getElementById('payAuto').style.display = 'none'
