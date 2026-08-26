@@ -57,6 +57,10 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .empty { text-align: center; padding: 60px; color: var(--ink-3); }
   .empty-icon { font-size: 40px; margin-bottom: 12px; }
+  .filter-tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .filter-tab { padding: 8px 18px; border-radius: 20px; border: 1.5px solid var(--border); background: none; color: var(--ink-2); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+  .filter-tab.active { background: var(--primary); border-color: var(--primary); color: #0F172A; }
+  .filter-tab:hover:not(.active) { border-color: var(--ink-2); color: var(--ink); }
 </style>
 </head>
 <body>
@@ -96,6 +100,11 @@
     <div class="section-title">Clientes</div>
     <button class="btn-add" onclick="openNewModal()">+ Novo cliente</button>
   </div>
+  <div class="filter-tabs">
+    <button class="filter-tab active" id="tab-all"       onclick="setFilter('all')">Todos</button>
+    <button class="filter-tab"        id="tab-active"    onclick="setFilter('active')">Ativos</button>
+    <button class="filter-tab"        id="tab-suspended" onclick="setFilter('suspended')">Inativos</button>
+  </div>
   <div id="clientList"><div class="loading"><div class="spinner"></div> Carregando…</div></div>
 </main>
 </div>
@@ -105,6 +114,15 @@
 <script>
 const ADMIN_EMAIL = 'welsoaress@gmail.com'
 let clients = []
+let activeFilter = 'all'
+
+function setFilter(f) {
+  activeFilter = f
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'))
+  const tab = document.getElementById('tab-' + f)
+  if (tab) tab.classList.add('active')
+  renderClients()
+}
 
 async function initAdmin() {
   const { data: { session } } = await db.auth.getSession()
@@ -205,15 +223,15 @@ function conviteTexto(nome) {
     `Teu cliente marca o horário sozinho pelo link. Um robô no WhatsApp cuida do resto: confirma, manda lembrete e preenche horário vago quando alguém desmarca.\n\n` +
     `Vê funcionando — agenda um teste com o TEU WhatsApp e o robô te responde na hora:\n` +
     `https://demo.navalhanobigode.com.br\n\n` +
-    `Se curtir, te libero *10 dias grátis* na tua barbearia. É só me responder aqui!`
+    `Se curtir, te libero *1 mês grátis* na tua barbearia. É só me responder aqui!`
 }
 
 function testeTexto(nome, trialUrl) {
   return `Boa${nome ? ', ' + nome : ''}! Fechado então. ✅\n\n` +
-    `Teu convite pessoal — *10 dias grátis*, sem pagar nada agora:\n` +
+    `Teu convite pessoal — *1 mês grátis*, sem pagar nada agora:\n` +
     `${trialUrl}\n\n` +
     `Leva uns 10 minutos: escolhe o plano, cadastra serviços e horários, e já sai com o teu link pronto pra mandar pros clientes.\n\n` +
-    `Se depois quiser ficar, é a partir de R$ 99/mês. Não curtiu? É só deixar pra lá. Abraço! ✂️`
+    `Se depois quiser ficar, é R$ 39,90/barbeiro/mês. Não curtiu? É só deixar pra lá. Abraço! ✂️`
 }
 
 function openConvite() {
@@ -395,8 +413,25 @@ function statsLine(c) {
 
 function renderClients() {
   const el = document.getElementById('clientList')
-  if (!clients.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><p>Nenhum cliente cadastrado ainda.</p></div>'
+
+  // Atualiza contadores nas abas
+  const total      = clients.length
+  const totalAtivo = clients.filter(c => c.status === 'active').length
+  const totalInativo = clients.filter(c => c.status === 'suspended').length
+  const tabAll  = document.getElementById('tab-all')
+  const tabAct  = document.getElementById('tab-active')
+  const tabSusp = document.getElementById('tab-suspended')
+  if (tabAll)  tabAll.textContent  = `Todos (${total})`
+  if (tabAct)  tabAct.textContent  = `Ativos (${totalAtivo})`
+  if (tabSusp) tabSusp.textContent = `Inativos (${totalInativo})`
+
+  // Filtra conforme aba selecionada
+  let filtered = clients
+  if (activeFilter === 'active')    filtered = clients.filter(c => c.status === 'active')
+  if (activeFilter === 'suspended') filtered = clients.filter(c => c.status === 'suspended')
+
+  if (!filtered.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><p>Nenhum cliente nesta categoria.</p></div>'
     return
   }
   const hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10)
@@ -404,7 +439,7 @@ function renderClients() {
   // Em teste = ativo que nunca pagou nada (nem kit, nem mensalidade). Demo fica de fora.
   const emTeste = c => c.status === 'active' && !c.kit_paid && !c.last_renewal_payment_id && c.slug !== 'demo' && c.next_due
   const diasTeste = c => Math.max(0, Math.round((Date.parse(c.next_due) - Date.parse(hoje)) / 86400000))
-  el.innerHTML = clients.map(c => `
+  el.innerHTML = filtered.map(c => `
     <div class="client-card" ${emTeste(c) ? 'style="border-left:4px solid var(--primary);"' : ''}>
       <div class="client-avatar">${c.name.charAt(0)}</div>
       <div class="client-body">
@@ -579,9 +614,9 @@ function openNewModal() {
       <div class="form-group">
         <label class="form-label">Plano</label>
         <select class="form-select" id="nPlan" onchange="updatePlanInfo()">
-          <option value="solo">Solo — R$ 99/mês (1 barbeiro)</option>
-          <option value="equipe" selected>Equipe — R$ 149/mês (3 barbeiros)</option>
-          <option value="black">Black — R$ 299/mês (5 barbeiros)</option>
+          <option value="solo">Solo — R$ 39,90/mês (1 barbeiro)</option>
+          <option value="equipe" selected>Equipe — R$ 119,70/mês (3 barbeiros)</option>
+          <option value="black">Black — R$ 199,50/mês (5 barbeiros)</option>
         </select>
       </div>
       <div class="form-group">
