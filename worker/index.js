@@ -55,6 +55,7 @@ export default {
     await processExpiredOffers(env)
     await checkBilling(env)
     await sendWeeklyReports(env)
+    await sendOnboardingReminders(env)
   }
 }
 
@@ -283,7 +284,7 @@ async function activate(env, shopId) {
   await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(shopId) + '&status=neq.active', {
     method: 'PATCH',
     headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-    body: JSON.stringify({ status: 'active', next_due: addMonths(todayBR(), 1), kit_paid: true })
+    body: JSON.stringify({ status: 'active', next_due: addMonths(todayBR(), 1), kit_paid: true, activated_at: new Date().toISOString() })
   })
   // WhatsApp de boas-vindas para clientes pagos (trial tem o próprio em trialActivate)
   const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=name,slug,owner_phone,referred_by`) || []
@@ -444,7 +445,7 @@ async function trialActivate(request, env) {
   await fetch(env.SUPABASE_URL + '/rest/v1/barbershops?id=eq.' + encodeURIComponent(shop.id) + '&status=neq.active', {
     method: 'PATCH',
     headers: { ...sbHeaders(env), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-    body: JSON.stringify({ status: 'active', next_due: trialUntil })
+    body: JSON.stringify({ status: 'active', next_due: trialUntil, activated_at: new Date().toISOString() })
   })
   if (shop.owner_phone) {
     await evoSend(env, shop.owner_phone,
@@ -537,6 +538,52 @@ async function renewShop(env, shopId, paymentId) {
   const { valor, aniver } = valorMensal(shop, plan)
   await evoSend(env, shop.owner_phone,
     `✅ *Pagamento recebido!*\n\n💈 ${shop.name}\nMensalidade de R$ ${fmtValor(valor)} confirmada.${aniver ? '\n🎂 Com 10% de desconto de aniversário!' : ''}\nSeu sistema está garantido até *${fmtData(novo)}*. Obrigado! 🤝`)
+}
+
+// ── Onboarding 48h: barbearias que ativaram mas não configuraram serviços/horários ──
+// Roda no cron às 10h; dispara uma vez por barbearia (marca onboarding_sent_at).
+async function sendOnboardingReminders(env) {
+  if (!env.SUPABASE_SERVICE_KEY || !env.EVOLUTION_APIKEY) return
+  const nowBR = new Date(Date.now() - 3 * 3600 * 1000)
+  if (nowBR.getUTCHours() !== 10) return // 10h de Brasília
+
+  // Ativas, sem lembrete enviado, ativadas há pelo menos 48h
+  const limite = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
+  const shops = await sb(env,
+    `barbershops?status=eq.active&onboarding_sent_at=is.null&activated_at=not.is.null` +
+    `&activated_at=lte.${encodeURIComponent(limite)}` +
+    `&owner_phone=not.is.null&select=id,name,slug,owner_phone`)
+  if (!Array.isArray(shops)) return
+
+  for (const shop of shops) {
+    // Marca antes de qualquer ação para não disparar duas vezes se o cron sobrepuser
+    await sb(env, `barbershops?id=eq.${shop.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ onboarding_sent_at: todayBR() })
+    })
+
+    // Verifica se já tem serviços cadastrados
+    const servs = await sb(env, `services?barbershop_id=eq.${shop.id}&active=eq.true&select=id`)
+    const temServicos = Array.isArray(servs) && servs.length > 0
+
+    // Verifica se algum barbeiro tem horários definidos
+    const barbs = await sb(env, `barbers?barbershop_id=eq.${shop.id}&active=eq.true&select=id`)
+    let temHorarios = false
+    if (Array.isArray(barbs) && barbs.length > 0) {
+      const ids = barbs.map(b => b.id).join(',')
+      const avail = await sb(env, `availability?barber_id=in.(${ids})&select=id`)
+      temHorarios = Array.isArray(avail) && avail.length > 0
+    }
+
+    if (temServicos && temHorarios) continue // já configurado, nada a fazer
+
+    const faltam = []
+    if (!temServicos) faltam.push('• *Serviços* (corte, barba, etc.) com preço e duração')
+    if (!temHorarios) faltam.push('• *Dias e horários* de atendimento')
+
+    await evoSend(env, shop.owner_phone,
+      `💈 *Oi, ${shop.name}!*\n\nVi aqui que sua barbearia ainda não está pronta pra receber clientes. Falta configurar:\n\n${faltam.join('\n')}\n\nSem isso, os clientes chegam no link e não conseguem agendar. Leva menos de 5 minutos:\n\n🖥️ https://${shop.slug}.navalhanobigode.com.br/painel/\n\nQualquer dúvida, é só chamar! 🤝`)
+  }
 }
 
 // Roda no cron: avisos 3 dias antes / no dia, bloqueio ao vencer e suspensão após 5 dias
