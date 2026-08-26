@@ -289,7 +289,7 @@ async function activate(env, shopId) {
   const [shop] = await sb(env, `barbershops?id=eq.${shopId}&select=name,slug,owner_phone,referred_by`) || []
   if (shop?.owner_phone) {
     await evoSend(env, shop.owner_phone,
-      `✅ *Pagamento confirmado!*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem:\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel:\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nA partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝\n\n💳 *Aproveita e pede sua maquininha* — chip 4G incluso, imprime comprovante, sai SEDEX 10 pra todo Brasil. Só R$89. Me chama aqui se quiser! 📦\n\n🤝 *Indica pra um amigo barbeiro e ganha desconto!* Cada indicado que assinar desconta R$30/mês na sua mensalidade:\nhttps://cadastro.navalhanobigode.com.br/?ref=${shop.slug}`)
+      `✅ *Pagamento confirmado!*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem:\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel:\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nA partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝\n\n💳 *Aproveita e pede sua maquininha* — chip 4G incluso, imprime comprovante, sai SEDEX 10 pra todo Brasil. Só R$89. Me chama aqui se quiser! 📦\n\n🤝 *Indica pra um amigo barbeiro e ganha desconto!* Cada indicado que assinar desconta R$30/mês na sua mensalidade.\n\n👉 Toca aqui pra mandar a indicação já com a mensagem pronta:\n${refShareLink(shop.slug)}`)
   }
   // Notifica o indicador quando o indicado vira cliente pago
   if (shop?.referred_by) {
@@ -448,7 +448,7 @@ async function trialActivate(request, env) {
   })
   if (shop.owner_phone) {
     await evoSend(env, shop.owner_phone,
-      `🎁 *Teste grátis ativado!*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem (manda no grupo, no status, em todo lugar):\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel (agenda e configurações):\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nSeu teste vale até *${fmtData(trialUntil)}*. A partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝\n\n💳 *Aproveita e pede sua maquininha* — chip 4G incluso, imprime comprovante, sai SEDEX 10 pra todo Brasil. Só R$89. Me chama aqui se quiser! 📦\n\n🤝 *Indica pra um amigo barbeiro e ganha desconto!* Cada indicado que assinar desconta R$30/mês na sua mensalidade:\nhttps://cadastro.navalhanobigode.com.br/?ref=${shop.slug}`)
+      `🎁 *Teste grátis ativado!*\n\n💈 ${shop.name} já está no ar.\n\n📲 Link pros seus clientes agendarem (manda no grupo, no status, em todo lugar):\nhttps://${shop.slug}.navalhanobigode.com.br\n\n🖥️ Seu painel (agenda e configurações):\nhttps://${shop.slug}.navalhanobigode.com.br/painel/\n\nSeu teste vale até *${fmtData(trialUntil)}*. A partir de agora eu confirmo, lembro e cuido da sua agenda. Qualquer dúvida, é só chamar! 🤝\n\n💳 *Aproveita e pede sua maquininha* — chip 4G incluso, imprime comprovante, sai SEDEX 10 pra todo Brasil. Só R$89. Me chama aqui se quiser! 📦\n\n🤝 *Indica pra um amigo barbeiro e ganha desconto!* Cada indicado que assinar desconta R$30/mês na sua mensalidade.\n\n👉 Toca aqui pra mandar a indicação já com a mensagem pronta:\n${refShareLink(shop.slug)}`)
   }
   // Notifica o indicador quando o indicado ativa o teste
   if (shop.referred_by) {
@@ -808,6 +808,14 @@ async function evoSend(env, number, text) {
 function fmtData(dateStr) {
   const [ano, mes, dia] = dateStr.split('-')
   return `${dia}/${mes}`
+}
+
+// Link wa.me com mensagem pré-escrita de indicação — o barbeiro toca e o WhatsApp abre pronto pra mandar
+function refShareLink(slug) {
+  const url = `https://cadastro.navalhanobigode.com.br/?ref=${slug}`
+  const texto = encodeURIComponent(
+    `Ei! Tô usando o Navalha no Bigode na minha barbearia — clientes agendam sozinhos pelo celular, 24h, sem baixar nada. Tem um robô que recupera horário cancelado automaticamente. R$99/mês e 30 dias de garantia.\nCrie a sua: ${url}`)
+  return `https://wa.me/?text=${texto}`
 }
 
 async function loadBookingFull(env, bookingId) {
