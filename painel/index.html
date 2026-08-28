@@ -174,56 +174,77 @@ let shop = null, barbers = [], services = [], currentTab = 'agenda'
 let role = 'owner', myBarber = null
 let selectedDate = new Date().toISOString().slice(0,10)
 
+function showInitError(msg) {
+  document.getElementById('content').innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon">⚠️</div>
+      <div class="empty-title">Erro ao carregar</div>
+      <p style="margin-bottom:16px;">${msg || 'Sem conexão ou sessão expirada.'}</p>
+      <button class="btn" onclick="window.location.reload()" style="background:var(--gold);color:#07060A;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Tentar novamente</button>
+    </div>`
+}
+
 async function init() {
-  const { data: { session } } = await db.auth.getSession()
-  if (!session) { window.location.href = '/painel/login.html'; return }
+  // Timeout de 12 s — se a rede travar o spinner some e aparece botão de retry
+  const timeoutId = setTimeout(() => showInitError('Conexão lenta. Verifique sua internet e tente novamente.'), 12000)
+  try {
+    const { data: { session }, error: sessErr } = await db.auth.getSession()
+    if (sessErr) throw sessErr
+    if (!session) { clearTimeout(timeoutId); window.location.href = '/painel/login.html'; return }
 
-  const user = session.user
+    const user = session.user
 
-  // Dono da barbearia?
-  const { data: ownShop } = await db.from('barbershops').select('*').eq('owner_email', user.email).maybeSingle()
-  let shopData = ownShop
+    // Dono da barbearia?
+    const { data: ownShop } = await db.from('barbershops').select('*').eq('owner_email', user.email).maybeSingle()
+    let shopData = ownShop
 
-  // Se não é dono, é barbeiro da equipe?
-  if (!shopData) {
-    const { data: me } = await db.from('barbers').select('*').eq('email', user.email.toLowerCase()).maybeSingle()
-    if (me) {
-      role = 'barber'
-      myBarber = me
-      const { data: s2 } = await db.from('barbershops').select('*').eq('id', me.barbershop_id).maybeSingle()
-      shopData = s2
+    // Se não é dono, é barbeiro da equipe?
+    if (!shopData) {
+      const { data: me } = await db.from('barbers').select('*').eq('email', user.email.toLowerCase()).maybeSingle()
+      if (me) {
+        role = 'barber'
+        myBarber = me
+        const { data: s2 } = await db.from('barbershops').select('*').eq('id', me.barbershop_id).maybeSingle()
+        shopData = s2
+      }
     }
+
+    if (!shopData) {
+      clearTimeout(timeoutId)
+      document.getElementById('content').innerHTML = '<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-title">Sem barbearia vinculada</div><p>Conta sem barbearia associada.</p></div>'
+      return
+    }
+
+    shop = shopData
+    document.getElementById('shopBadge').textContent = role === 'barber' ? `${shop.name} · ${myBarber.name}` : shop.name
+    document.title = `Painel — ${shop.name}`
+
+    // Barbeiro da equipe só vê a própria agenda
+    if (role === 'barber') {
+      document.querySelectorAll('.nav-tab').forEach((el, i) => { if (i > 0) el.style.display = 'none' })
+    }
+
+    // Plano Solo: a aba vira "Meus horários" (não existe equipe)
+    if (role === 'owner' && shop.max_barbers === 1) {
+      const tabs = document.querySelectorAll('.nav-tab')
+      if (tabs[2]) tabs[2].textContent = 'Meus horários'
+    }
+
+    const [{ data: b }, { data: s }] = await Promise.all([
+      db.from('barbers').select('*').eq('barbershop_id', shop.id),
+      db.from('services').select('*').eq('barbershop_id', shop.id)
+    ])
+    barbers = b || []
+    services = s || []
+
+    clearTimeout(timeoutId)
+    renderTab('agenda')
+    checkBillingLock()
+  } catch (err) {
+    clearTimeout(timeoutId)
+    console.error('init error:', err)
+    showInitError('Erro inesperado. Tente novamente ou faça login novamente.')
   }
-
-  if (!shopData) {
-    document.getElementById('content').innerHTML = '<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-title">Sem barbearia vinculada</div><p>Conta sem barbearia associada.</p></div>'
-    return
-  }
-
-  shop = shopData
-  document.getElementById('shopBadge').textContent = role === 'barber' ? `${shop.name} · ${myBarber.name}` : shop.name
-  document.title = `Painel — ${shop.name}`
-
-  // Barbeiro da equipe só vê a própria agenda
-  if (role === 'barber') {
-    document.querySelectorAll('.nav-tab').forEach((el, i) => { if (i > 0) el.style.display = 'none' })
-  }
-
-  // Plano Solo: a aba vira "Meus horários" (não existe equipe)
-  if (role === 'owner' && shop.max_barbers === 1) {
-    const tabs = document.querySelectorAll('.nav-tab')
-    if (tabs[2]) tabs[2].textContent = 'Meus horários'
-  }
-
-  const [{ data: b }, { data: s }] = await Promise.all([
-    db.from('barbers').select('*').eq('barbershop_id', shop.id),
-    db.from('services').select('*').eq('barbershop_id', shop.id)
-  ])
-  barbers = b || []
-  services = s || []
-
-  renderTab('agenda')
-  checkBillingLock()
 }
 
 // ── Bloqueio por mensalidade vencida: agenda fica visível, mas borrada.
